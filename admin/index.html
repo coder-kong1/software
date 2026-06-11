@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>智能充电桩系统 - 管理员端</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app">
+    <section class="login-page" v-if="!loggedIn">
+      <div class="login-panel">
+        <p class="eyebrow">Station Admin</p>
+        <h1>管理员登录</h1>
+        <label>管理员账号
+          <input v-model="login.account" placeholder="例如 admin" />
+        </label>
+        <label>密码
+          <input v-model="login.password" placeholder="请输入密码" type="password" />
+        </label>
+        <button @click="loginAdmin">登录</button>
+        <p class="hint">默认账号：admin / admin123</p>
+      </div>
+    </section>
+
+    <template v-else>
+      <aside class="sidebar">
+        <h1>充电站管理</h1>
+        <button :class="{active: page==='dashboard'}" @click="page='dashboard'">运行总览</button>
+        <button :class="{active: page==='piles'}" @click="page='piles'">充电桩管理</button>
+        <button :class="{active: page==='queues'}" @click="page='queues'">队列状态</button>
+        <button :class="{active: page==='pricing'}" @click="page='pricing'">计费参数</button>
+        <button :class="{active: page==='exceptions'}" @click="page='exceptions'">异常处理</button>
+        <button :class="{active: page==='reports'}" @click="page='reports'">运营报表</button>
+        <button class="logout" @click="logout">退出登录</button>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Admin Console</p>
+            <h2>{{ pageTitle }}</h2>
+          </div>
+          <button @click="refreshCurrent">刷新当前模块</button>
+        </header>
+
+        <section v-if="page==='dashboard'" class="page">
+          <div class="summary">
+            <div><span>快充桩</span><strong>{{ fastCount }}</strong></div>
+            <div><span>慢充桩</span><strong>{{ slowCount }}</strong></div>
+            <div><span>等待车辆</span><strong>{{ waitingCount }}</strong></div>
+            <div><span>账单数</span><strong>{{ bills.length }}</strong></div>
+          </div>
+          <div class="panel">
+            <div class="toolbar">
+              <h3>等待区队列</h3>
+              <button @click="refresh">刷新状态</button>
+            </div>
+            <div class="queue-grid">
+              <div>
+                <h4>快充队列</h4>
+                <p>{{ snapshot.fastQueue.map(q => q.carId + '(' + q.requestAmount + 'kWh)').join(' / ') || '-' }}</p>
+              </div>
+              <div>
+                <h4>慢充队列</h4>
+                <p>{{ snapshot.slowQueue.map(q => q.carId + '(' + q.requestAmount + 'kWh)').join(' / ') || '-' }}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="page==='piles'" class="page">
+          <div class="toolbar">
+            <h3>充电桩运行状态</h3>
+            <button @click="refresh">刷新</button>
+          </div>
+          <div class="pile-grid">
+            <div class="pile" v-for="item in snapshot.piles" :key="item.pile.id">
+              <div class="pile-head">
+                <strong>{{ item.pile.id }}</strong>
+                <span :class="item.pile.status.toLowerCase()">{{ item.pile.status }}</span>
+              </div>
+              <p>{{ item.pile.mode === 'FAST' ? '快充' : '慢充' }} · {{ item.pile.powerKw }} kW</p>
+              <p>充电中：{{ item.chargingCar ? item.chargingCar.carId : '-' }}</p>
+              <p>队列：{{ item.queue.map(q => q.carId).join(' / ') || '-' }}</p>
+              <div class="pile-actions">
+                <button @click="pileAction(item.pile.id, 'power-on')">启动</button>
+                <button @click="pileAction(item.pile.id, 'power-off')">关闭</button>
+                <button class="warn" @click="pileAction(item.pile.id, 'fault')">故障</button>
+                <button @click="pileAction(item.pile.id, 'recover')">恢复</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <section v-if="page==='queues'" class="page queue-status-page">
+          <div class="queue-page-head">
+            <div>
+              <p class="eyebrow">Queue Monitor</p>
+              <h3>充电桩队列状态</h3>
+            </div>
+            <span>按充电桩编号查看当前充电车辆与等待队列</span>
+          </div>
+
+          <div class="panel queue-query-panel">
+            <div class="toolbar">
+              <div>
+                <p class="eyebrow">Pile Queue</p>
+                <h3>查询充电桩队列</h3>
+              </div>
+              <button class="secondary" @click="refresh">刷新数据</button>
+            </div>
+            <div class="form queue-query-form">
+              <label>充电桩编号
+                <input v-model.trim="selectedPileId" placeholder="例如 F1" @keyup.enter="queryPileQueue()" />
+              </label>
+              <button class="query-primary" @click="queryPileQueue()">查询队列状态</button>
+            </div>
+            <div class="pile-shortcuts" v-if="snapshot.piles.length">
+              <button class="shortcut" v-for="item in snapshot.piles" :key="item.pile.id" @click="queryPileQueue(item.pile.id)">
+                {{ item.pile.id }}
+              </button>
+            </div>
+          </div>
+
+          <div class="queue-result" v-if="queueSearchId && selectedPile">
+            <div class="panel queue-status-panel">
+              <div class="queue-hero">
+                <div>
+                  <p class="eyebrow">Selected Pile</p>
+                  <h3>{{ selectedPile.pile.id }}</h3>
+                  <p>{{ modeText(selectedPile.pile.mode) }} · {{ selectedPile.pile.powerKw }} kW · 队列容量 {{ selectedPile.pile.queueLimit }}</p>
+                </div>
+                <span class="status-badge" :class="statusClass(selectedPile.pile.status)">{{ selectedPile.pile.status }}</span>
+              </div>
+              <div class="queue-meter">
+                <div>
+                  <span>队列占用</span>
+                  <strong>{{ selectedQueueUsage }}</strong>
+                </div>
+                <div class="meter-track"><span :style="{ width: selectedQueuePercent + '%' }"></span></div>
+              </div>
+            </div>
+
+            <div class="queue-metrics">
+              <div class="metric-card accent-green"><span>正在充电</span><strong>{{ selectedPile.chargingCar ? selectedPile.chargingCar.carId : '-' }}</strong></div>
+              <div class="metric-card accent-blue"><span>等待车辆</span><strong>{{ selectedWaitingCars }}</strong></div>
+              <div class="metric-card accent-slate"><span>当前占用率</span><strong>{{ selectedQueuePercent }}%</strong></div>
+            </div>
+
+            <div class="panel queue-table-panel">
+              <div class="toolbar">
+                <h3>车辆明细</h3>
+                <button class="secondary" @click="queryPileQueue(queueSearchId)">重新查询</button>
+              </div>
+              <table v-if="selectedPileCars.length">
+                <thead>
+                  <tr>
+                    <th>队内位置</th>
+                    <th>车号</th>
+                    <th>车辆状态</th>
+                    <th>队列编号</th>
+                    <th>请求电量</th>
+                    <th>已充电量</th>
+                    <th>请求时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="car in selectedPileCars" :key="selectedPile.pile.id + '-' + car.id">
+                    <td>{{ car.position }}</td>
+                    <td><strong>{{ car.carId }}</strong></td>
+                    <td><span class="status-badge" :class="statusClass(car.state)">{{ stateText(car.state) }}</span></td>
+                    <td>{{ car.queueNum || '-' }}</td>
+                    <td>{{ formatNumber(car.requestAmount) }}</td>
+                    <td>{{ formatNumber(car.chargedAmount) }}</td>
+                    <td>{{ car.requestTime || '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else class="empty-state">当前充电桩没有正在充电或排队车辆。</div>
+            </div>
+          </div>
+
+          <div class="empty-state" v-else-if="queueSearchId">
+            未找到编号为 {{ queueSearchId }} 的充电桩，请确认编号后重新查询。
+          </div>
+          <div class="empty-state" v-else>
+            请输入充电桩编号后查询，也可以点击上方快捷编号。
+          </div>
+        </section>
+
+        <section v-if="page==='pricing'" class="page pricing-page">
+          <div class="panel">
+            <h3>计费参数</h3>
+            <div class="form compact-form">
+              <label>峰时电价<input v-model.number="rule.peakPrice" type="number" step="0.1" /></label>
+              <label>平时电价<input v-model.number="rule.normalPrice" type="number" step="0.1" /></label>
+              <label>谷时电价<input v-model.number="rule.valleyPrice" type="number" step="0.1" /></label>
+              <label>服务费<input v-model.number="rule.servicePrice" type="number" step="0.1" /></label>
+              <button @click="saveRule">保存参数</button>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>时段规则</h3>
+            <table>
+              <thead><tr><th>时段</th><th>时间范围</th><th>电价</th><th>说明</th></tr></thead>
+              <tbody>
+                <tr><td>峰时</td><td>10:00-15:00 / 18:00-21:00</td><td>{{ rule.peakPrice.toFixed(2) }}</td><td>高峰用电</td></tr>
+                <tr><td>平时</td><td>07:00-10:00 / 15:00-18:00 / 21:00-23:00</td><td>{{ rule.normalPrice.toFixed(2) }}</td><td>常规运营</td></tr>
+                <tr><td>谷时</td><td>23:00-07:00</td><td>{{ rule.valleyPrice.toFixed(2) }}</td><td>低谷优惠</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <h3>费用预览</h3>
+            <div class="preview-grid">
+              <label>模拟电量 kWh<input v-model.number="pricePreviewAmount" type="number" step="1" /></label>
+              <div><span>峰时总价</span><strong>{{ previewFee(rule.peakPrice) }}</strong></div>
+              <div><span>平时总价</span><strong>{{ previewFee(rule.normalPrice) }}</strong></div>
+              <div><span>谷时总价</span><strong>{{ previewFee(rule.valleyPrice) }}</strong></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>规则摘要</h3>
+            <div class="rule-summary">
+              <p>总费用 = 充电费 + 服务费</p>
+              <p>充电费 = 充电电量 × 当前时段电价</p>
+              <p>服务费 = 充电电量 × {{ rule.servicePrice.toFixed(2) }}</p>
+              <p>快充与慢充电费相同，服务费可按运营策略调整。</p>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="page==='exceptions'" class="page">
+          <div class="panel">
+            <div class="toolbar">
+              <h3>异常事件处理</h3>
+              <button @click="loadAbnormalEvents">刷新异常</button>
+            </div>
+            <div class="form inline-form">
+              <label>车号
+                <input v-model="abnormal.carId" placeholder="例如 V21" />
+              </label>
+              <label>异常类型
+                <select v-model="abnormal.eventType">
+                  <option value="NO_SHOW">过号未到</option>
+                  <option value="OCCUPY_WITHOUT_CHARGE">霸占充电桩不充电</option>
+                  <option value="OVERSTAY">充完不走</option>
+                  <option value="QUEUE_JUMP">恶意插队</option>
+                </select>
+              </label>
+              <label>罚款金额
+                <input v-model.number="abnormal.penaltyFee" placeholder="例如 20" type="number" />
+              </label>
+              <button @click="reportAbnormalEvent">登记异常</button>
+            </div>
+            <table>
+              <thead><tr><th>车号</th><th>类型</th><th>说明</th><th>罚款</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr v-for="e in abnormalEvents" :key="e.id">
+                  <td>{{ e.carId }}</td><td>{{ e.eventType }}</td><td>{{ e.description }}</td>
+                  <td>{{ e.penaltyFee.toFixed(2) }}</td><td>{{ e.status }}</td>
+                  <td><button @click="resolveAbnormalEvent(e.id)">处理完成</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section v-if="page==='reports'" class="page">
+          <div class="panel">
+            <div class="toolbar">
+              <h3>运营报表</h3>
+              <button @click="loadBills">刷新报表</button>
+            </div>
+            <table>
+              <thead><tr><th>账单号</th><th>车号</th><th>充电桩</th><th>电量</th><th>时长</th><th>总费用</th></tr></thead>
+              <tbody>
+                <tr v-for="b in bills" :key="b.id">
+                  <td>{{ b.billNo }}</td><td>{{ b.carId }}</td><td>{{ b.pileId }}</td>
+                  <td>{{ b.chargeAmount }}</td><td>{{ b.chargeDuration.toFixed(2) }}</td><td>{{ b.totalFee.toFixed(2) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </template>
+    <p class="toast" v-if="message">{{ message }}</p>
+  </div>
+  <script src="./main.js"></script>
+</body>
+</html>

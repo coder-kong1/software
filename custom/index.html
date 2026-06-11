@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>智能充电桩系统 - 客户端</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app">
+    <section class="auth-page" v-if="page !== 'app'">
+      <div class="auth-panel">
+        <p class="eyebrow">Charging Client</p>
+        <h1>{{ page === 'login' ? '客户端登录' : '车辆账号注册' }}</h1>
+        <div class="form" v-if="page === 'login'">
+          <label>车号
+            <input v-model="login.account" placeholder="例如 V1" />
+          </label>
+          <label>密码
+            <input v-model="login.password" placeholder="请输入密码" type="password" />
+          </label>
+          <button @click="loginClient">登录</button>
+          <button class="ghost" @click="page='register'">注册新车辆账号</button>
+        </div>
+        <div class="form" v-else>
+          <label>车号
+            <input v-model="register.carId" placeholder="例如 V1" />
+          </label>
+          <label>用户名
+            <input v-model="register.userName" placeholder="请输入用户名" />
+          </label>
+          <label>密码
+            <input v-model="register.password" placeholder="请输入密码" type="password" />
+          </label>
+          <label>电池容量 kWh
+            <input v-model.number="register.carCapacity" placeholder="例如 100" type="number" />
+          </label>
+          <button @click="createAccount">注册并登录</button>
+          <button class="ghost" @click="page='login'">返回登录</button>
+        </div>
+      </div>
+    </section>
+
+    <template v-else>
+      <aside class="sidebar">
+        <h1>智能充电</h1>
+        <button :class="{active: tab==='submit'}" @click="tab='submit'">提交申请</button>
+        <button :class="{active: tab==='modify'}" @click="tab='modify'">修改请求</button>
+        <button :class="{active: tab==='control'}" @click="tab='control'">充电控制</button>
+        <button :class="{active: tab==='state'}" @click="tab='state'">队列状态</button>
+        <button :class="{active: tab==='detail'}" @click="tab='detail'">充电详单</button>
+        <button :class="{active: tab==='bill'}" @click="tab='bill'">账单支付</button>
+        <button :class="{active: tab==='payment'}" @click="tab='payment'">支付记录</button>
+        <button class="logout" @click="logout">退出登录</button>
+      </aside>
+
+      <main>
+        <header>
+          <div>
+            <p class="eyebrow">Client Console</p>
+            <h2>{{ tabTitle }}</h2>
+          </div>
+        </header>
+
+        <section v-if="tab==='submit'" class="page-grid">
+          <div class="panel">
+            <h3>提交充电请求</h3>
+            <div class="form">
+              <label>车号
+                <input v-model="request.carId" placeholder="登录后自动带入" readonly />
+              </label>
+              <label>请求电量 kWh
+                <input v-model.number="request.requestAmount" placeholder="例如 40" type="number" />
+              </label>
+              <label>充电模式
+                <select v-model="request.requestMode">
+                  <option value="FAST">快充</option>
+                  <option value="SLOW">慢充</option>
+                </select>
+              </label>
+              <button @click="submitRequest">提交申请</button>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>申请说明</h3>
+            <div class="info-list">
+              <p>车辆必须先进入等待区，再提交充电请求。</p>
+              <p>系统按快充、慢充两个等待队列分别管理。</p>
+              <p>有空闲充电桩或停车位时，系统会自动调度车辆进入充电区。</p>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="tab==='modify'" class="page-grid modify-page">
+          <div class="panel modify-panel">
+            <div>
+              <p class="panel-kicker">Amount</p>
+              <h3>修改充电电量</h3>
+              <p class="panel-desc">适用于尚未充满或仍在排队的请求，系统会同步更新队列与预计费用。</p>
+            </div>
+            <div class="form action-form">
+              <label>目标电量 kWh
+                <input v-model.number="newAmount" placeholder="新电量 kWh" type="number" />
+              </label>
+              <button @click="modifyAmount">确认修改电量</button>
+            </div>
+          </div>
+          <div class="panel modify-panel">
+            <div>
+              <p class="panel-kicker">Mode</p>
+              <h3>修改充电模式</h3>
+              <p class="panel-desc">切换快充或慢充后，车辆会退出原队列并进入对应模式队列重新调度。</p>
+            </div>
+            <div class="form action-form">
+              <label>目标模式
+                <select v-model="newMode">
+                  <option value="FAST">快充</option>
+                  <option value="SLOW">慢充</option>
+                </select>
+              </label>
+              <button @click="modifyMode">修改模式并重新排队</button>
+            </div>
+          </div>
+          <div class="panel danger-panel">
+            <div>
+              <p class="panel-kicker">Cancel</p>
+              <h3>取消充电请求</h3>
+              <p class="panel-desc">取消后系统会释放等待区、停车位或充电桩资源，并触发后续车辆重新调度。</p>
+            </div>
+            <button class="danger" @click="cancelRequest">取消当前请求</button>
+          </div>
+        </section>
+
+        <section v-if="tab==='control'" class="page-grid">
+          <div class="panel">
+            <h3>开始充电</h3>
+            <div class="form">
+              <label>充电桩编号
+                <input v-model="startPile" placeholder="例如 F1" />
+              </label>
+              <button @click="startCharging">开始充电</button>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>结束充电</h3>
+            <p>结束后系统生成账单。账单用于支付，详单仍可随时查看当前排队或充电状态。</p>
+            <button @click="endCharging">结束并结算</button>
+          </div>
+        </section>
+
+        <section v-if="tab==='state'" class="panel">
+          <div class="toolbar">
+            <h3>车辆状态</h3>
+            <button @click="queryState">刷新</button>
+          </div>
+          <div v-if="state" class="state-layout">
+            <div class="state-card"><span>当前状态</span><strong>{{ state.state || '-' }}</strong></div>
+            <div class="state-card"><span>队列编号</span><strong>{{ state.queueNum || '-' }}</strong></div>
+            <div class="state-card"><span>充电桩</span><strong>{{ state.pileId || '-' }}</strong></div>
+          </div>
+          <table v-if="state">
+            <thead><tr><th>车号</th><th>充电模式</th><th>请求电量</th><th>已充电量</th><th>状态</th><th>队列号</th><th>充电桩</th><th>请求时间</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>{{ state.carId }}</td>
+                <td>{{ modeText(state.requestMode) }}</td>
+                <td>{{ formatNumber(state.requestAmount) }}</td>
+                <td>{{ formatNumber(state.chargedAmount) }}</td>
+                <td>{{ state.state }}</td>
+                <td>{{ state.queueNum || '-' }}</td>
+                <td>{{ state.pileId || '-' }}</td>
+                <td>{{ state.requestTime || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="empty-state">暂无车辆状态，提交申请或点击刷新后显示。</div>
+        </section>
+
+        <section v-if="tab==='detail'" class="panel">
+          <div class="toolbar">
+            <h3>充电详单</h3>
+            <button @click="queryDetail">刷新详单</button>
+          </div>
+          <div v-if="detail" class="state-layout">
+            <div class="state-card"><span>车辆当前位置</span><strong>{{ detail.currentPosition }}</strong></div>
+            <div class="state-card"><span>充电桩</span><strong>{{ detail.pileId || '-' }}</strong></div>
+            <div class="state-card"><span>队列编号</span><strong>{{ detail.queueNum || '-' }}</strong></div>
+          </div>
+          <table v-if="detail">
+            <thead><tr><th>车号</th><th>当前位置</th><th>充电模式</th><th>请求电量</th><th>已充电量</th><th>预估电费</th><th>预估服务费</th><th>预估总费用</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>{{ detail.carId }}</td>
+                <td>{{ detail.currentPosition }}</td>
+                <td>{{ modeText(detail.requestMode) }}</td>
+                <td>{{ formatNumber(detail.requestAmount) }}</td>
+                <td>{{ formatNumber(detail.chargedAmount) }}</td>
+                <td>{{ formatNumber(detail.estimatedChargeFee) }}</td>
+                <td>{{ formatNumber(detail.estimatedServiceFee) }}</td>
+                <td>{{ formatNumber(detail.estimatedTotalFee) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="empty-state">点击刷新详单后显示当前车辆的排队、等待或充电信息。</div>
+        </section>
+
+        <section v-if="tab==='bill'" class="panel">
+          <div class="toolbar">
+            <h3>账单支付</h3>
+            <button @click="queryBills">查询账单</button>
+          </div>
+          <table>
+            <thead><tr><th>账单号</th><th>车号</th><th>充电桩</th><th>电量</th><th>时长</th><th>电费</th><th>服务费</th><th>总计</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="b in bills" :key="b.id">
+                <td>{{ b.billNo }}</td><td>{{ b.carId }}</td><td>{{ b.pileId }}</td>
+                <td>{{ b.chargeAmount }}</td><td>{{ b.chargeDuration.toFixed(2) }}</td>
+                <td>{{ b.chargeFee.toFixed(2) }}</td><td>{{ b.serviceFee.toFixed(2) }}</td><td>{{ b.totalFee.toFixed(2) }}</td>
+                <td><button @click="payBill(b)">支付</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section v-if="tab==='payment'" class="panel">
+          <div class="toolbar">
+            <h3>支付记录</h3>
+            <button @click="queryPayments">刷新</button>
+          </div>
+          <table>
+            <thead><tr><th>账单号</th><th>车号</th><th>金额</th><th>状态</th><th>支付时间</th></tr></thead>
+            <tbody>
+              <tr v-for="p in payments" :key="p.id">
+                <td>{{ p.billNo }}</td><td>{{ p.carId }}</td><td>{{ p.amount.toFixed(2) }}</td><td>{{ p.status }}</td><td>{{ p.paidAt }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </main>
+    </template>
+    <p class="toast" v-if="message">{{ message }}</p>
+  </div>
+  <script src="./main.js"></script>
+</body>
+</html>
