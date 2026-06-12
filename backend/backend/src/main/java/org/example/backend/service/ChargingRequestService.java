@@ -17,13 +17,16 @@ public class ChargingRequestService {
 
     private final ChargingRequestRepository chargingRequestRepository;
     private final AccountService accountService;
+    private final SchedulingService schedulingService;
 
     public ChargingRequestService(
         ChargingRequestRepository chargingRequestRepository,
-        AccountService accountService
+        AccountService accountService,
+        SchedulingService schedulingService
     ) {
         this.chargingRequestRepository = chargingRequestRepository;
         this.accountService = accountService;
+        this.schedulingService = schedulingService;
     }
 
     @Transactional
@@ -42,6 +45,7 @@ public class ChargingRequestService {
             created.id(),
             queueNum(request.requestMode(), created.id())
         );
+        schedulingService.schedule();
         return ChargingRequestResponse.from(requireActive(carId));
     }
 
@@ -53,6 +57,7 @@ public class ChargingRequestService {
         validateAmount(amount, account);
 
         chargingRequestRepository.updateAmount(current.id(), amount);
+        schedulingService.schedule();
         return ChargingRequestResponse.from(requireActive(normalizedCarId));
     }
 
@@ -67,6 +72,7 @@ public class ChargingRequestService {
             mode,
             queueNum(mode, current.id())
         );
+        schedulingService.schedule();
         return ChargingRequestResponse.from(requireActive(normalizedCarId));
     }
 
@@ -76,6 +82,7 @@ public class ChargingRequestService {
         accountService.requireAccount(normalizedCarId);
         ChargingRequest current = requireEditable(normalizedCarId);
         chargingRequestRepository.cancel(current.id());
+        schedulingService.schedule();
     }
 
     public ChargingRequestResponse getState(String carId) {
