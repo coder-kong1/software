@@ -211,13 +211,14 @@
             <button @click="queryBills">查询账单</button>
           </div>
           <table>
-            <thead><tr><th>账单号</th><th>车号</th><th>充电桩</th><th>电量</th><th>时长</th><th>电费</th><th>服务费</th><th>总计</th><th>操作</th></tr></thead>
+            <thead><tr><th>账单号</th><th>车号</th><th>充电桩</th><th>电量</th><th>时长</th><th>电费</th><th>服务费</th><th>总计</th><th>状态</th><th>操作</th></tr></thead>
             <tbody>
               <tr v-for="b in bills" :key="b.id">
                 <td>{{ b.billNo }}</td><td>{{ b.carId }}</td><td>{{ b.pileId }}</td>
                 <td>{{ b.chargeAmount }}</td><td>{{ b.chargeDuration.toFixed(2) }}</td>
                 <td>{{ b.chargeFee.toFixed(2) }}</td><td>{{ b.serviceFee.toFixed(2) }}</td><td>{{ b.totalFee.toFixed(2) }}</td>
-                <td><button @click="payBill(b)">支付</button></td>
+                <td>{{ b.status === 'PAID' ? '已支付' : '待支付' }}</td>
+                <td><button @click="payBill(b)" :disabled="b.status === 'PAID'">{{ b.status === 'PAID' ? '已支付' : '支付' }}</button></td>
               </tr>
             </tbody>
           </table>
@@ -241,6 +242,6 @@
     </template>
     <p class="toast" v-if="message">{{ message }}</p>
   </div>
-  <script src="./main.js"></script>
+  <script type="module" src="./main.js"></script>
 </body>
 </html>

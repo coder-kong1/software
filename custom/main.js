@@ -122,6 +122,7 @@ Vue.createApp({
         body: JSON.stringify({ billNo: bill.billNo, carId: bill.carId, amount: bill.totalFee })
       });
       this.payments.unshift(payment);
+      await this.queryBills();
       this.tab = 'payment';
     },
     async queryPayments() {

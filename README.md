@@ -20,10 +20,12 @@
 - 数据库与后端基础：SQLite 建表和初始化数据、统一响应、参数校验、异常处理、跨域配置。
 - 用户账号：注册、登录、查询、修改和删除。
 - 充电申请：提交、修改电量、修改模式、取消和车辆状态查询。
+- 排队调度与充电桩：快慢充队列分配、队首开始充电、充电桩启停、故障与恢复。
+- 计费与支付：峰平谷分时计费、实时详单、结束充电生成账单、账单查询、支付及支付记录。
 
 ## 运行
 
-环境要求：JDK 26、Node.js 20 或更高版本。
+环境要求：JDK 21、Node.js 20 或更高版本。
 
 后端：
 
@@ -74,6 +76,28 @@ cd backend/backend
 | PUT | `/api/charging/requests/{carId}/mode` | 修改充电模式 |
 | DELETE | `/api/charging/requests/{carId}` | 取消充电申请 |
 | GET | `/api/charging/requests/{carId}/state` | 查询车辆状态 |
+
+## 计费、详单、账单与支付接口
+
+| 方法 | 路径 | 功能 |
+| --- | --- | --- |
+| POST | `/api/charging/requests/{carId}/start` | 队首车辆开始充电 |
+| GET | `/api/charging/details/{carId}` | 查询当前充电详单和实时费用 |
+| POST | `/api/charging/requests/{carId}/end` | 结束充电并生成账单 |
+| GET | `/api/charging/bills/{carId}?date=YYYY-MM-DD` | 按车辆/日期查询账单 |
+| GET | `/api/charging/bills/detail/{billNo}` | 按账单号查询详单 |
+| POST | `/api/charging/bills/pay` | 支付账单 |
+| GET | `/api/charging/payments/{carId}` | 查询支付记录 |
+| GET | `/api/admin/price-rule` | 查询峰平谷和服务费参数 |
+| PUT | `/api/admin/price-rule` | 修改计费参数 |
+| GET | `/api/admin/reports/bills` | 查询运营账单报表 |
+
+分时时段：
+
+- 峰时：10:00-15:00、18:00-21:00。
+- 平时：07:00-10:00、15:00-18:00、21:00-23:00。
+- 谷时：23:00-次日 07:00。
+- 总费用 = 分时充电费 + 充电电量 × 服务费单价。
 
 ## 完整需求补充
 

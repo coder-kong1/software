@@ -68,7 +68,7 @@ class AccountAndChargingApiTests {
                     {"carId": "V1", "requestAmount": 40, "requestMode": "SLOW"}
                     """))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.data.state").value("WAITING_AREA"))
+            .andExpect(jsonPath("$.data.state").value("QUEUING"))
             .andExpect(jsonPath("$.data.queueNum").isNotEmpty());
 
         mockMvc.perform(put("/api/charging/requests/V1/amount")

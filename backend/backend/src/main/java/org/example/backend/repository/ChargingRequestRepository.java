@@ -37,6 +37,19 @@ public class ChargingRequestRepository {
         ).stream().findFirst();
     }
 
+    public Optional<ChargingRequest> findById(long requestId) {
+        return jdbcTemplate.query(
+            """
+            SELECT id, car_id, request_amount, charged_amount, request_mode, state,
+                   queue_num, pile_id, request_time, start_time, end_time, updated_at
+            FROM charging_request
+            WHERE id = ?
+            """,
+            this::mapRow,
+            requestId
+        ).stream().findFirst();
+    }
+
     public boolean existsActiveByCarId(String carId) {
         Integer count = jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM charging_request WHERE car_id = ? AND state IN ("
@@ -97,6 +110,21 @@ public class ChargingRequestRepository {
             FROM charging_request
             WHERE pile_id = ? AND state = 'CHARGING'
             ORDER BY start_time, id
+            LIMIT 1
+            """,
+            this::mapRow,
+            pileId
+        ).stream().findFirst();
+    }
+
+    public Optional<ChargingRequest> findFirstQueuedByPile(String pileId) {
+        return jdbcTemplate.query(
+            """
+            SELECT id, car_id, request_amount, charged_amount, request_mode, state,
+                   queue_num, pile_id, request_time, start_time, end_time, updated_at
+            FROM charging_request
+            WHERE pile_id = ? AND state = 'QUEUING'
+            ORDER BY request_time, id
             LIMIT 1
             """,
             this::mapRow,
@@ -192,6 +220,31 @@ public class ChargingRequestRepository {
             queueNum,
             state.name(),
             state.name(),
+            requestId
+        );
+    }
+
+    public void startCharging(long requestId) {
+        jdbcTemplate.update(
+            """
+            UPDATE charging_request
+            SET state = 'CHARGING', start_time = COALESCE(start_time, CURRENT_TIMESTAMP),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            requestId
+        );
+    }
+
+    public void finish(long requestId, double chargedAmount) {
+        jdbcTemplate.update(
+            """
+            UPDATE charging_request
+            SET state = 'FINISHED', charged_amount = ?, queue_num = NULL,
+                end_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            chargedAmount,
             requestId
         );
     }

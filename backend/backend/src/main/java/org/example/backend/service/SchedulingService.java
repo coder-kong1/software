@@ -87,14 +87,11 @@ public class SchedulingService {
             }
 
             int activeCount = chargingRequestRepository.countActiveByPile(target.id());
-            ChargingRequestState state = activeCount == 0
-                ? ChargingRequestState.CHARGING
-                : ChargingRequestState.QUEUING;
             chargingRequestRepository.assignToPile(
                 request.id(),
                 target.id(),
                 target.id() + "-" + (activeCount + 1),
-                state
+                ChargingRequestState.QUEUING
             );
         }
     }

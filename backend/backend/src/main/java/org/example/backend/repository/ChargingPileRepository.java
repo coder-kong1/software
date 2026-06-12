@@ -71,6 +71,22 @@ public class ChargingPileRepository {
         );
     }
 
+    public void addChargingStatistics(String pileId, double durationHours, double chargeAmount) {
+        jdbcTemplate.update(
+            """
+            UPDATE charging_pile
+            SET total_charge_count = total_charge_count + 1,
+                total_charge_duration = total_charge_duration + ?,
+                total_charge_amount = total_charge_amount + ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            durationHours,
+            chargeAmount,
+            pileId
+        );
+    }
+
     private ChargingPile mapRow(ResultSet resultSet, int rowNumber) throws SQLException {
         return new ChargingPile(
             resultSet.getString("id"),
