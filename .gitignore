@@ -1,8 +1,13 @@
 # Java / Spring Boot
 target/
+build/
+.gradle/
+.tools/
 *.class
 *.jar
 *.war
+backend/backend/data/*.db
+backend/backend/data/*.db-*
 
 # Node / Vue
 node_modules/
