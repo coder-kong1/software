@@ -15,19 +15,25 @@
 - 静态结构：`ChargingRequestService`、`SchedulingService`、`BillingService`、`PileService`、`AccountService`、`ChargingPileRepository`、`ChargingRequestRepository`、`BillRepository`、`UserAccountRepository` 等类可直接用于绘制类图。
 - 前端界面：`custom` 为客户端，`admin` 为管理员端，包含作业模板第二部分所需的界面设计原型。
 
-运行：
+## 当前已实现模块
+
+- 数据库与后端基础：SQLite 建表和初始化数据、统一响应、参数校验、异常处理、跨域配置。
+- 用户账号：注册、登录、查询、修改和删除。
+- 充电申请：提交、修改电量、修改模式、取消和车辆状态查询。
+
+## 运行
+
+环境要求：JDK 26、Node.js 20 或更高版本。
+
+后端：
 
 ```powershell
-cd backend
-mvn spring-boot:run
+cd backend/backend
+.\gradlew.bat bootRun
 ```
 
-浏览器打开：
-
-- 客户端：`custom/index.html`
-- 管理员端：`admin/index.html`
-
 默认 API 地址为 `http://localhost:8080/api`。
+SQLite 数据库首次启动时自动创建在 `backend/backend/data/charging.db`。
 
 前端分端口启动：
 
@@ -47,6 +53,27 @@ npm run dev
 
 管理员端地址：`http://localhost:5174`
 
+后端测试：
+
+```powershell
+cd backend/backend
+.\gradlew.bat test
+```
+
+## 前两个任务接口
+
+| 方法 | 路径 | 功能 |
+| --- | --- | --- |
+| POST | `/api/accounts` | 注册车辆账号 |
+| POST | `/api/accounts/login` | 登录 |
+| GET | `/api/accounts/{carId}` | 查询车辆账号 |
+| PUT | `/api/accounts/{carId}` | 修改车辆账号 |
+| DELETE | `/api/accounts/{carId}` | 删除车辆账号 |
+| POST | `/api/charging/requests` | 提交充电申请 |
+| PUT | `/api/charging/requests/{carId}/amount` | 修改请求电量 |
+| PUT | `/api/charging/requests/{carId}/mode` | 修改充电模式 |
+| DELETE | `/api/charging/requests/{carId}` | 取消充电申请 |
+| GET | `/api/charging/requests/{carId}/state` | 查询车辆状态 |
 
 ## 完整需求补充
 

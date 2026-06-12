@@ -50,8 +50,11 @@ Vue.createApp({
       this.tab = 'submit';
     },
     async loginClient() {
-      const carId = this.login.account || 'V1';
-      this.enterClient({ carId, userName: '登录用户', carCapacity: 100 });
+      const account = await this.call('/accounts/login', {
+        method: 'POST',
+        body: JSON.stringify(this.login)
+      });
+      this.enterClient(account);
     },
     async createAccount() {
       const account = await this.call('/accounts', { method: 'POST', body: JSON.stringify(this.register) });
