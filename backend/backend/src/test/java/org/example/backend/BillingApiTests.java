@@ -29,6 +29,8 @@ class BillingApiTests {
 
     @BeforeEach
     void cleanBusinessData() {
+        jdbcTemplate.update("DELETE FROM penalty_payment");
+        jdbcTemplate.update("DELETE FROM penalty_bill");
         jdbcTemplate.update("DELETE FROM payment");
         jdbcTemplate.update("DELETE FROM bill");
         jdbcTemplate.update("DELETE FROM abnormal_event");
@@ -158,6 +160,49 @@ class BillingApiTests {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.peakPrice").value(1.2))
             .andExpect(jsonPath("$.data.servicePrice").value(0.9));
+    }
+
+    @Test
+    void returnsSameRealtimeChargedAmountAcrossUserAndAdminApis() throws Exception {
+        createAccount("VPROGRESS");
+
+        mockMvc.perform(post("/api/charging/requests")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"carId": "VPROGRESS", "requestAmount": 40, "requestMode": "FAST"}
+                    """))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/charging/requests/VPROGRESS/start")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"pileId\": \"F1\"}"))
+            .andExpect(status().isOk());
+
+        jdbcTemplate.update(
+            """
+            UPDATE charging_request
+            SET start_time = datetime('now', '-1 hour')
+            WHERE car_id = 'VPROGRESS'
+            """
+        );
+
+        mockMvc.perform(get("/api/charging/requests/VPROGRESS/state"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.chargedAmount").value(30.0));
+
+        mockMvc.perform(get("/api/charging/details/VPROGRESS"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.chargedAmount").value(30.0));
+
+        mockMvc.perform(get("/api/admin/snapshot"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath(
+                "$.data.piles[?(@.pile.id == 'F1')].chargingCar.chargedAmount"
+            ).value(30.0));
+
+        mockMvc.perform(get("/api/admin/queues/F1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.cars[0].chargedAmount").value(30.0));
     }
 
     private void createAccount(String carId) throws Exception {

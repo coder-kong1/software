@@ -18,11 +18,18 @@ public record ChargingRequestResponse(
     String endTime
 ) {
     public static ChargingRequestResponse from(ChargingRequest request) {
+        return from(request, request.chargedAmount());
+    }
+
+    public static ChargingRequestResponse from(
+        ChargingRequest request,
+        double chargedAmount
+    ) {
         return new ChargingRequestResponse(
             request.id(),
             request.carId(),
             request.requestAmount(),
-            request.chargedAmount(),
+            chargedAmount,
             request.requestMode(),
             request.state(),
             request.queueNum(),

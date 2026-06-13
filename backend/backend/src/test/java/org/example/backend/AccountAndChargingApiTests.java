@@ -30,6 +30,8 @@ class AccountAndChargingApiTests {
 
     @BeforeEach
     void cleanBusinessData() {
+        jdbcTemplate.update("DELETE FROM penalty_payment");
+        jdbcTemplate.update("DELETE FROM penalty_bill");
         jdbcTemplate.update("DELETE FROM payment");
         jdbcTemplate.update("DELETE FROM bill");
         jdbcTemplate.update("DELETE FROM abnormal_event");

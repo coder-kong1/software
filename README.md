@@ -88,9 +88,15 @@ cd backend/backend
 | GET | `/api/charging/bills/detail/{billNo}` | 按账单号查询详单 |
 | POST | `/api/charging/bills/pay` | 支付账单 |
 | GET | `/api/charging/payments/{carId}` | 查询支付记录 |
+| GET | `/api/charging/abnormal-events/{carId}` | 查询本人异常记录和处理通知 |
 | GET | `/api/admin/price-rule` | 查询峰平谷和服务费参数 |
 | PUT | `/api/admin/price-rule` | 修改计费参数 |
 | GET | `/api/admin/reports/bills` | 查询运营账单报表 |
+| GET | `/api/admin/reports/summary` | 查询运营汇总指标 |
+| GET | `/api/admin/queues/{pileId}` | 查询充电桩队列、车辆容量和预计等待时间 |
+| POST | `/api/admin/abnormal-events` | 登记异常事件 |
+| GET | `/api/admin/abnormal-events` | 查询异常事件 |
+| POST | `/api/admin/abnormal-events/{id}/resolve` | 完成异常处理 |
 
 分时时段：
 

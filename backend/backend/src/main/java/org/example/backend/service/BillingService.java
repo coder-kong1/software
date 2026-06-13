@@ -1,32 +1,35 @@
 package org.example.backend.service;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Locale;
+import java.util.ArrayList;
+import java.util.Comparator;
 
 import org.example.backend.common.BusinessException;
 import org.example.backend.domain.Bill;
-import org.example.backend.domain.ChargingPile;
 import org.example.backend.domain.ChargingRequest;
 import org.example.backend.domain.ChargingRequestState;
 import org.example.backend.domain.Payment;
 import org.example.backend.domain.PriceRule;
+import org.example.backend.domain.AbnormalEvent;
+import org.example.backend.domain.PenaltyBill;
+import org.example.backend.dto.billing.BillingItem;
 import org.example.backend.dto.billing.ChargingDetailResponse;
 import org.example.backend.dto.billing.PaymentRequest;
 import org.example.backend.dto.billing.PriceRuleRequest;
+import org.example.backend.dto.billing.UserAbnormalEventView;
 import org.example.backend.dto.charging.ChargingRequestResponse;
 import org.example.backend.repository.BillRepository;
 import org.example.backend.repository.ChargingPileRepository;
 import org.example.backend.repository.ChargingRequestRepository;
 import org.example.backend.repository.PaymentRepository;
 import org.example.backend.repository.PriceRuleRepository;
+import org.example.backend.repository.AbnormalEventRepository;
+import org.example.backend.repository.PenaltyBillRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,8 +37,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class BillingService {
 
-    private static final DateTimeFormatter SQLITE_TIME =
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final ZoneId BILLING_ZONE = ZoneId.of("Asia/Shanghai");
 
     private final ChargingRequestRepository chargingRequestRepository;
@@ -46,6 +47,9 @@ public class BillingService {
     private final AccountService accountService;
     private final SchedulingService schedulingService;
     private final TariffCalculator tariffCalculator;
+    private final AbnormalEventRepository abnormalEventRepository;
+    private final PenaltyBillRepository penaltyBillRepository;
+    private final ChargingProgressService chargingProgressService;
 
     public BillingService(
         ChargingRequestRepository chargingRequestRepository,
@@ -55,7 +59,10 @@ public class BillingService {
         PaymentRepository paymentRepository,
         AccountService accountService,
         SchedulingService schedulingService,
-        TariffCalculator tariffCalculator
+        TariffCalculator tariffCalculator,
+        AbnormalEventRepository abnormalEventRepository,
+        PenaltyBillRepository penaltyBillRepository,
+        ChargingProgressService chargingProgressService
     ) {
         this.chargingRequestRepository = chargingRequestRepository;
         this.chargingPileRepository = chargingPileRepository;
@@ -65,6 +72,9 @@ public class BillingService {
         this.accountService = accountService;
         this.schedulingService = schedulingService;
         this.tariffCalculator = tariffCalculator;
+        this.abnormalEventRepository = abnormalEventRepository;
+        this.penaltyBillRepository = penaltyBillRepository;
+        this.chargingProgressService = chargingProgressService;
     }
 
     @Transactional
@@ -93,27 +103,28 @@ public class BillingService {
             }
             chargingRequestRepository.startCharging(request.id());
         }
-        return ChargingRequestResponse.from(requireActive(normalizedCarId));
+        return chargingProgressService.response(requireActive(normalizedCarId));
     }
 
     public ChargingDetailResponse getDetail(String carId) {
         String normalizedCarId = normalizeCarId(carId);
         accountService.requireAccount(normalizedCarId);
         ChargingRequest request = requireActive(normalizedCarId);
-        Usage usage = currentUsage(request, nowUtc());
+        ChargingProgressService.ChargingProgress progress =
+            chargingProgressService.progress(request);
         PriceRule rule = priceRuleRepository.get();
-        TariffCalculator.FeeBreakdown fee = calculateFee(usage, rule);
+        TariffCalculator.FeeBreakdown fee = calculateFee(progress, rule);
 
         return new ChargingDetailResponse(
             request.carId(),
             position(request.state()),
             request.requestMode(),
             request.requestAmount(),
-            usage.chargeAmount(),
+            progress.chargedAmount(),
             request.queueNum(),
             request.pileId(),
             request.startTime(),
-            usage.durationHours(),
+            progress.durationHours(),
             fee.chargeFee(),
             fee.serviceFee(),
             fee.totalFee()
@@ -129,45 +140,80 @@ public class BillingService {
             throw new BusinessException(HttpStatus.CONFLICT, "车辆当前未在充电");
         }
 
-        LocalDateTime endTime = nowUtc();
-        Usage usage = currentUsage(request, endTime);
+        ChargingProgressService.ChargingProgress progress =
+            chargingProgressService.progress(request);
         PriceRule rule = priceRuleRepository.get();
-        TariffCalculator.FeeBreakdown fee = calculateFee(usage, rule);
+        TariffCalculator.FeeBreakdown fee = calculateFee(progress, rule);
 
-        chargingRequestRepository.finish(request.id(), usage.chargeAmount());
+        chargingRequestRepository.finish(request.id(), progress.chargedAmount());
         String billNo = billNo(request);
         billRepository.insert(
             billNo,
             request.id(),
             request.carId(),
             request.pileId(),
-            usage.chargeAmount(),
-            usage.durationHours(),
+            progress.chargedAmount(),
+            progress.durationHours(),
             fee.chargeFee(),
             fee.serviceFee(),
             fee.totalFee()
         );
         chargingPileRepository.addChargingStatistics(
             request.pileId(),
-            usage.durationHours(),
-            usage.chargeAmount()
+            progress.durationHours(),
+            progress.chargedAmount()
         );
         schedulingService.schedule();
         return requireBill(billNo);
     }
 
-    public List<Bill> getBills(String carId, String date) {
+    public List<BillingItem> getBills(String carId, String date) {
         String normalizedCarId = normalizeCarId(carId);
         accountService.requireAccount(normalizedCarId);
-        return billRepository.findByCarId(normalizedCarId, date);
+        List<BillingItem> items = new ArrayList<>();
+        billRepository.findByCarId(normalizedCarId, date).stream()
+            .map(BillingItem::charging)
+            .forEach(items::add);
+        penaltyBillRepository.findByCarId(normalizedCarId).stream()
+            .filter(bill -> date == null || date.isBlank() || bill.createdAt().startsWith(date))
+            .map(bill -> BillingItem.penalty(
+                bill,
+                abnormalEventRepository.findById(bill.eventId())
+                    .map(AbnormalEvent::description)
+                    .orElse("异常罚款")
+            ))
+            .forEach(items::add);
+        items.sort(Comparator.comparing(BillingItem::createdAt).reversed());
+        return items;
     }
 
-    public Bill getBillDetail(String billNo) {
-        return requireBill(billNo.trim().toUpperCase(Locale.ROOT));
+    public BillingItem getBillDetail(String billNo) {
+        String normalizedBillNo = billNo.trim().toUpperCase(Locale.ROOT);
+        return billRepository.findByBillNo(normalizedBillNo)
+            .map(BillingItem::charging)
+            .orElseGet(() -> penaltyBillRepository.findByBillNo(normalizedBillNo)
+                .map(bill -> BillingItem.penalty(
+                    bill,
+                    abnormalEventRepository.findById(bill.eventId())
+                        .map(AbnormalEvent::description)
+                        .orElse("异常罚款")
+                ))
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "账单不存在")));
     }
 
-    public List<Bill> getAllBills() {
-        return billRepository.findAll();
+    public List<BillingItem> getAllBills() {
+        List<BillingItem> items = new ArrayList<>();
+        billRepository.findAll().stream().map(BillingItem::charging).forEach(items::add);
+        penaltyBillRepository.findAll().stream()
+            .map(bill -> BillingItem.penalty(
+                bill,
+                abnormalEventRepository.findById(bill.eventId())
+                    .map(AbnormalEvent::description)
+                    .orElse("异常罚款")
+            ))
+            .forEach(items::add);
+        items.sort(Comparator.comparing(BillingItem::createdAt).reversed());
+        return items;
     }
 
     @Transactional
@@ -175,6 +221,10 @@ public class BillingService {
         String billNo = request.billNo().trim().toUpperCase(Locale.ROOT);
         String carId = normalizeCarId(request.carId());
         accountService.requireAccount(carId);
+        PenaltyBill penaltyBill = penaltyBillRepository.findByBillNo(billNo).orElse(null);
+        if (penaltyBill != null) {
+            return payPenalty(request, carId, penaltyBill);
+        }
         Bill bill = requireBill(billNo);
 
         if (!bill.carId().equals(carId)) {
@@ -196,7 +246,21 @@ public class BillingService {
     public List<Payment> getPayments(String carId) {
         String normalizedCarId = normalizeCarId(carId);
         accountService.requireAccount(normalizedCarId);
-        return paymentRepository.findByCarId(normalizedCarId);
+        List<Payment> payments = new ArrayList<>(paymentRepository.findByCarId(normalizedCarId));
+        payments.addAll(penaltyBillRepository.findPaymentsByCarId(normalizedCarId));
+        payments.sort(Comparator.comparing(Payment::paidAt).reversed());
+        return payments;
+    }
+
+    public List<UserAbnormalEventView> getAbnormalEvents(String carId) {
+        String normalizedCarId = normalizeCarId(carId);
+        accountService.requireAccount(normalizedCarId);
+        return abnormalEventRepository.findByCarId(normalizedCarId).stream()
+            .map(event -> UserAbnormalEventView.from(
+                event,
+                penaltyBillRepository.findByEventId(event.id()).orElse(null)
+            ))
+            .toList();
     }
 
     public PriceRule getPriceRule() {
@@ -214,31 +278,6 @@ public class BillingService {
         return priceRuleRepository.get();
     }
 
-    private Usage currentUsage(ChargingRequest request, LocalDateTime endTime) {
-        if (request.state() != ChargingRequestState.CHARGING || request.startTime() == null) {
-            return new Usage(endTime, endTime, 0, 0);
-        }
-
-        ChargingPile pile = chargingPileRepository.findById(request.pileId())
-            .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "充电桩不存在"));
-        LocalDateTime startTime = parseTime(request.startTime());
-        double durationHours = Math.max(
-            0,
-            Duration.between(startTime, endTime).toSeconds() / 3600.0
-        );
-        double calculatedAmount = Math.min(
-            request.requestAmount(),
-            durationHours * pile.powerKw()
-        );
-        double chargeAmount = Math.max(request.chargedAmount(), calculatedAmount);
-        return new Usage(
-            startTime,
-            endTime,
-            decimal(chargeAmount, 4),
-            decimal(durationHours, 4)
-        );
-    }
-
     private ChargingRequest requireActive(String carId) {
         return chargingRequestRepository.findActiveByCarId(carId)
             .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "未找到进行中的充电申请"));
@@ -249,12 +288,25 @@ public class BillingService {
             .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "账单不存在"));
     }
 
-    private LocalDateTime parseTime(String value) {
-        try {
-            return LocalDateTime.parse(value, SQLITE_TIME);
-        } catch (DateTimeParseException exception) {
-            return LocalDateTime.parse(value);
+    private Payment payPenalty(
+        PaymentRequest request,
+        String carId,
+        PenaltyBill bill
+    ) {
+        if (!bill.carId().equals(carId)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "无权支付其他车辆的罚款账单");
         }
+        if ("PAID".equals(bill.status())
+            || penaltyBillRepository.findPaymentByBillNo(bill.billNo()).isPresent()) {
+            throw new BusinessException(HttpStatus.CONFLICT, "该罚款账单已支付");
+        }
+        if (Math.abs(request.amount() - bill.amount()) > 0.005) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "支付金额与罚款金额不一致");
+        }
+        penaltyBillRepository.insertPayment(bill.billNo(), carId, bill.amount());
+        penaltyBillRepository.markPaid(bill.billNo());
+        return penaltyBillRepository.findPaymentByBillNo(bill.billNo())
+            .orElseThrow(() -> new IllegalStateException("罚款支付记录创建失败"));
     }
 
     private String position(ChargingRequestState state) {
@@ -272,16 +324,24 @@ public class BillingService {
             + "-" + request.id();
     }
 
-    private TariffCalculator.FeeBreakdown calculateFee(Usage usage, PriceRule rule) {
-        LocalDateTime localStart = usage.startTime()
+    private TariffCalculator.FeeBreakdown calculateFee(
+        ChargingProgressService.ChargingProgress progress,
+        PriceRule rule
+    ) {
+        LocalDateTime localStart = progress.startTime()
             .atOffset(ZoneOffset.UTC)
             .atZoneSameInstant(BILLING_ZONE)
             .toLocalDateTime();
-        LocalDateTime localEnd = usage.endTime()
+        LocalDateTime localEnd = progress.endTime()
             .atOffset(ZoneOffset.UTC)
             .atZoneSameInstant(BILLING_ZONE)
             .toLocalDateTime();
-        return tariffCalculator.calculate(localStart, localEnd, usage.chargeAmount(), rule);
+        return tariffCalculator.calculate(
+            localStart,
+            localEnd,
+            progress.chargedAmount(),
+            rule
+        );
     }
 
     private LocalDateTime nowUtc() {
@@ -296,15 +356,4 @@ public class BillingService {
         return pileId.trim().toUpperCase(Locale.ROOT);
     }
 
-    private double decimal(double value, int scale) {
-        return BigDecimal.valueOf(value).setScale(scale, RoundingMode.HALF_UP).doubleValue();
-    }
-
-    private record Usage(
-        LocalDateTime startTime,
-        LocalDateTime endTime,
-        double chargeAmount,
-        double durationHours
-    ) {
-    }
 }

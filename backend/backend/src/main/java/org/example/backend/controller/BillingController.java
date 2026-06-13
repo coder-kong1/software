@@ -5,8 +5,10 @@ import java.util.List;
 import org.example.backend.common.ApiResponse;
 import org.example.backend.domain.Bill;
 import org.example.backend.domain.Payment;
+import org.example.backend.dto.billing.BillingItem;
 import org.example.backend.dto.billing.ChargingDetailResponse;
 import org.example.backend.dto.billing.PaymentRequest;
+import org.example.backend.dto.billing.UserAbnormalEventView;
 import org.example.backend.service.BillingService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,7 +36,7 @@ public class BillingController {
     }
 
     @GetMapping("/bills/{carId}")
-    public ApiResponse<List<Bill>> getBills(
+    public ApiResponse<List<BillingItem>> getBills(
         @PathVariable String carId,
         @RequestParam(required = false) String date
     ) {
@@ -42,7 +44,7 @@ public class BillingController {
     }
 
     @GetMapping("/bills/detail/{billNo}")
-    public ApiResponse<Bill> getBillDetail(@PathVariable String billNo) {
+    public ApiResponse<BillingItem> getBillDetail(@PathVariable String billNo) {
         return ApiResponse.ok(billingService.getBillDetail(billNo));
     }
 
@@ -54,5 +56,12 @@ public class BillingController {
     @GetMapping("/payments/{carId}")
     public ApiResponse<List<Payment>> getPayments(@PathVariable String carId) {
         return ApiResponse.ok(billingService.getPayments(carId));
+    }
+
+    @GetMapping("/abnormal-events/{carId}")
+    public ApiResponse<List<UserAbnormalEventView>> getAbnormalEvents(
+        @PathVariable String carId
+    ) {
+        return ApiResponse.ok(billingService.getAbnormalEvents(carId));
     }
 }

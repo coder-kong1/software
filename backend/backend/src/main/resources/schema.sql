@@ -99,3 +99,27 @@ CREATE TABLE IF NOT EXISTS abnormal_event (
     resolved_at TEXT,
     FOREIGN KEY (car_id) REFERENCES user_account(car_id) ON UPDATE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS penalty_bill (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bill_no TEXT NOT NULL UNIQUE,
+    event_id INTEGER NOT NULL UNIQUE,
+    car_id TEXT NOT NULL,
+    amount REAL NOT NULL CHECK (amount >= 0),
+    status TEXT NOT NULL DEFAULT 'UNPAID' CHECK (status IN ('UNPAID', 'PAID')),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    paid_at TEXT,
+    FOREIGN KEY (event_id) REFERENCES abnormal_event(id),
+    FOREIGN KEY (car_id) REFERENCES user_account(car_id) ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS penalty_payment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bill_no TEXT NOT NULL UNIQUE,
+    car_id TEXT NOT NULL,
+    amount REAL NOT NULL CHECK (amount >= 0),
+    status TEXT NOT NULL DEFAULT 'SUCCESS',
+    paid_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (bill_no) REFERENCES penalty_bill(bill_no),
+    FOREIGN KEY (car_id) REFERENCES user_account(car_id) ON UPDATE CASCADE
+);

@@ -18,15 +18,18 @@ public class ChargingRequestService {
     private final ChargingRequestRepository chargingRequestRepository;
     private final AccountService accountService;
     private final SchedulingService schedulingService;
+    private final ChargingProgressService chargingProgressService;
 
     public ChargingRequestService(
         ChargingRequestRepository chargingRequestRepository,
         AccountService accountService,
-        SchedulingService schedulingService
+        SchedulingService schedulingService,
+        ChargingProgressService chargingProgressService
     ) {
         this.chargingRequestRepository = chargingRequestRepository;
         this.accountService = accountService;
         this.schedulingService = schedulingService;
+        this.chargingProgressService = chargingProgressService;
     }
 
     @Transactional
@@ -46,7 +49,7 @@ public class ChargingRequestService {
             queueNum(request.requestMode(), created.id())
         );
         schedulingService.schedule();
-        return ChargingRequestResponse.from(requireActive(carId));
+        return chargingProgressService.response(requireActive(carId));
     }
 
     @Transactional
@@ -58,7 +61,7 @@ public class ChargingRequestService {
 
         chargingRequestRepository.updateAmount(current.id(), amount);
         schedulingService.schedule();
-        return ChargingRequestResponse.from(requireActive(normalizedCarId));
+        return chargingProgressService.response(requireActive(normalizedCarId));
     }
 
     @Transactional
@@ -73,7 +76,7 @@ public class ChargingRequestService {
             queueNum(mode, current.id())
         );
         schedulingService.schedule();
-        return ChargingRequestResponse.from(requireActive(normalizedCarId));
+        return chargingProgressService.response(requireActive(normalizedCarId));
     }
 
     @Transactional
@@ -88,7 +91,7 @@ public class ChargingRequestService {
     public ChargingRequestResponse getState(String carId) {
         String normalizedCarId = AccountService.normalizeCarId(carId);
         accountService.requireAccount(normalizedCarId);
-        return ChargingRequestResponse.from(requireActive(normalizedCarId));
+        return chargingProgressService.response(requireActive(normalizedCarId));
     }
 
     private ChargingRequest requireEditable(String carId) {

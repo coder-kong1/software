@@ -5,6 +5,7 @@ Vue.createApp({
     return {
       page: 'login',
       tab: 'submit',
+      refreshTimer: null,
       carId: '',
       message: '',
       login: { account: 'V1', password: '123456' },
@@ -12,11 +13,11 @@ Vue.createApp({
       request: { carId: '', requestAmount: 40, requestMode: 'SLOW' },
       newAmount: 30,
       newMode: 'FAST',
-      startPile: 'F1',
       state: null,
       detail: null,
       bills: [],
-      payments: []
+      payments: [],
+      abnormalEvents: []
     };
   },
   computed: {
@@ -28,18 +29,19 @@ Vue.createApp({
         state: '队列状态',
         detail: '充电详单',
         bill: '账单支付',
-        payment: '支付记录'
+        payment: '支付记录',
+        abnormal: '异常与通知'
       }[this.tab];
     }
   },
   methods: {
-    async call(url, options = {}) {
+    async call(url, options = {}, silent = false) {
       const res = await fetch(API + url, {
         headers: { 'Content-Type': 'application/json' },
         ...options
       });
       const body = await res.json();
-      this.message = body.success ? '操作成功' : body.message;
+      if (!silent) this.message = body.success ? '操作成功' : body.message;
       if (!body.success) throw new Error(body.message);
       return body.data;
     },
@@ -48,6 +50,7 @@ Vue.createApp({
       this.request.carId = account.carId;
       this.page = 'app';
       this.tab = 'submit';
+      this.startAutoRefresh();
     },
     async loginClient() {
       const account = await this.call('/accounts/login', {
@@ -69,6 +72,8 @@ Vue.createApp({
       this.detail = null;
       this.bills = [];
       this.payments = [];
+      this.abnormalEvents = [];
+      this.stopAutoRefresh();
     },
     modeText(value) {
       if (value === 'FAST') return '快充';
@@ -105,7 +110,20 @@ Vue.createApp({
       this.detail = await this.call(`/charging/details/${this.carId}`);
     },
     async startCharging() {
-      this.state = await this.call(`/charging/requests/${this.carId}/start`, { method: 'POST', body: JSON.stringify({ pileId: this.startPile }) });
+      const latestState = await this.call(
+        `/charging/requests/${this.carId}/state`,
+        {},
+        true
+      );
+      this.state = latestState;
+      if (!latestState.pileId) {
+        this.message = '车辆尚未分配到充电桩，请等待系统调度';
+        return;
+      }
+      this.state = await this.call(`/charging/requests/${this.carId}/start`, {
+        method: 'POST',
+        body: JSON.stringify({ pileId: latestState.pileId })
+      });
       this.tab = 'state';
     },
     async endCharging() {
@@ -127,6 +145,49 @@ Vue.createApp({
     },
     async queryPayments() {
       this.payments = await this.call(`/charging/payments/${this.carId}`);
+    },
+    async queryAbnormalEvents() {
+      this.abnormalEvents = await this.call(`/charging/abnormal-events/${this.carId}`);
+    },
+    abnormalTypeText(value) {
+      return {
+        NO_SHOW: '过号未到',
+        OCCUPY_WITHOUT_CHARGE: '霸占充电桩不充电',
+        OVERSTAY: '充完不走',
+        QUEUE_JUMP: '恶意插队'
+      }[value] || value;
+    },
+    startAutoRefresh() {
+      this.stopAutoRefresh();
+      this.refreshTimer = window.setInterval(async () => {
+        if (this.page !== 'app') return;
+        try {
+          if (this.tab === 'state' && this.state) {
+            this.state = await this.call(
+              `/charging/requests/${this.carId}/state`,
+              {},
+              true
+            );
+          } else if (this.tab === 'detail' && this.detail) {
+            this.detail = await this.call(
+              `/charging/details/${this.carId}`,
+              {},
+              true
+            );
+          }
+        } catch (error) {
+          // The request may have completed between refreshes.
+        }
+      }, 3000);
+    },
+    stopAutoRefresh() {
+      if (this.refreshTimer !== null) {
+        window.clearInterval(this.refreshTimer);
+        this.refreshTimer = null;
+      }
     }
+  },
+  beforeUnmount() {
+    this.stopAutoRefresh();
   }
 }).mount('#app');

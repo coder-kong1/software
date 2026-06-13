@@ -50,21 +50,29 @@
             <div><span>快充桩</span><strong>{{ fastCount }}</strong></div>
             <div><span>慢充桩</span><strong>{{ slowCount }}</strong></div>
             <div><span>等待车辆</span><strong>{{ waitingCount }}</strong></div>
-            <div><span>账单数</span><strong>{{ bills.length }}</strong></div>
+            <div><span>账单数</span><strong>{{ report.billCount }}</strong></div>
           </div>
           <div class="panel">
             <div class="toolbar">
-              <h3>等待区队列</h3>
+              <h3>待充电车辆</h3>
               <button @click="refresh">刷新状态</button>
             </div>
             <div class="queue-grid">
               <div>
                 <h4>快充队列</h4>
-                <p>{{ snapshot.fastQueue.map(q => q.carId + '(' + q.requestAmount + 'kWh)').join(' / ') || '-' }}</p>
+                <p>{{ fastWaitingCars.map(q => q.carId + '@' + q.pileId + '(' + q.requestAmount + 'kWh)').join(' / ') || '-' }}</p>
               </div>
               <div>
                 <h4>慢充队列</h4>
-                <p>{{ snapshot.slowQueue.map(q => q.carId + '(' + q.requestAmount + 'kWh)').join(' / ') || '-' }}</p>
+                <p>{{ slowWaitingCars.map(q => q.carId + '@' + q.pileId + '(' + q.requestAmount + 'kWh)').join(' / ') || '-' }}</p>
+              </div>
+              <div>
+                <h4>未分配等待区</h4>
+                <p>{{ snapshot.waitingArea.map(q => q.carId + '(' + q.requestAmount + 'kWh)').join(' / ') || '-' }}</p>
+              </div>
+              <div>
+                <h4>状态说明</h4>
+                <p>空闲桩队首车辆显示为“待开始”，用户点击开始充电后才进入充电中。</p>
               </div>
             </div>
           </div>
@@ -83,12 +91,13 @@
               </div>
               <p>{{ item.pile.mode === 'FAST' ? '快充' : '慢充' }} · {{ item.pile.powerKw }} kW</p>
               <p>充电中：{{ item.chargingCar ? item.chargingCar.carId : '-' }}</p>
+              <p>已充电量：{{ item.chargingCar ? formatNumber(item.chargingCar.chargedAmount) + ' kWh' : '-' }}</p>
               <p>队列：{{ item.queue.map(q => q.carId).join(' / ') || '-' }}</p>
               <div class="pile-actions">
-                <button @click="pileAction(item.pile.id, 'power-on')">启动</button>
-                <button @click="pileAction(item.pile.id, 'power-off')">关闭</button>
-                <button class="warn" @click="pileAction(item.pile.id, 'fault')">故障</button>
-                <button @click="pileAction(item.pile.id, 'recover')">恢复</button>
+                <button @click="pileAction(item.pile.id, 'power-on')" :disabled="item.pile.status !== 'STOPPED'">启动</button>
+                <button @click="pileAction(item.pile.id, 'power-off')" :disabled="item.pile.status !== 'RUNNING'">关闭</button>
+                <button class="warn" @click="pileAction(item.pile.id, 'fault')" :disabled="item.pile.status !== 'RUNNING'">故障</button>
+                <button @click="pileAction(item.pile.id, 'recover')" :disabled="item.pile.status !== 'FAULT'">恢复</button>
               </div>
             </div>
           </div>
@@ -145,7 +154,7 @@
             </div>
 
             <div class="queue-metrics">
-              <div class="metric-card accent-green"><span>正在充电</span><strong>{{ selectedPile.chargingCar ? selectedPile.chargingCar.carId : '-' }}</strong></div>
+              <div class="metric-card accent-green"><span>正在充电</span><strong>{{ selectedChargingCar ? selectedChargingCar.carId : '-' }}</strong></div>
               <div class="metric-card accent-blue"><span>等待车辆</span><strong>{{ selectedWaitingCars }}</strong></div>
               <div class="metric-card accent-slate"><span>当前占用率</span><strong>{{ selectedQueuePercent }}%</strong></div>
             </div>
@@ -160,10 +169,12 @@
                   <tr>
                     <th>队内位置</th>
                     <th>车号</th>
+                    <th>车辆容量</th>
                     <th>车辆状态</th>
                     <th>队列编号</th>
                     <th>请求电量</th>
                     <th>已充电量</th>
+                    <th>预计等待</th>
                     <th>请求时间</th>
                   </tr>
                 </thead>
@@ -171,10 +182,12 @@
                   <tr v-for="car in selectedPileCars" :key="selectedPile.pile.id + '-' + car.id">
                     <td>{{ car.position }}</td>
                     <td><strong>{{ car.carId }}</strong></td>
-                    <td><span class="status-badge" :class="statusClass(car.state)">{{ stateText(car.state) }}</span></td>
+                    <td>{{ formatNumber(car.carCapacity) }} kWh</td>
+                    <td><span class="status-badge" :class="statusClass(car.state)">{{ car.state === 'QUEUING' && car.estimatedWaitHours === 0 ? '待开始充电' : stateText(car.state) }}</span></td>
                     <td>{{ car.queueNum || '-' }}</td>
                     <td>{{ formatNumber(car.requestAmount) }}</td>
                     <td>{{ formatNumber(car.chargedAmount) }}</td>
+                    <td>{{ formatNumber(car.estimatedWaitHours) }} 小时</td>
                     <td>{{ car.requestTime || '-' }}</td>
                   </tr>
                 </tbody>
@@ -257,15 +270,18 @@
               <label>罚款金额
                 <input v-model.number="abnormal.penaltyFee" placeholder="例如 20" type="number" />
               </label>
+              <label>异常说明
+                <input v-model.trim="abnormal.description" placeholder="请输入异常情况说明" />
+              </label>
               <button @click="reportAbnormalEvent">登记异常</button>
             </div>
             <table>
               <thead><tr><th>车号</th><th>类型</th><th>说明</th><th>罚款</th><th>状态</th><th>操作</th></tr></thead>
               <tbody>
                 <tr v-for="e in abnormalEvents" :key="e.id">
-                  <td>{{ e.carId }}</td><td>{{ e.eventType }}</td><td>{{ e.description }}</td>
-                  <td>{{ e.penaltyFee.toFixed(2) }}</td><td>{{ e.status }}</td>
-                  <td><button @click="resolveAbnormalEvent(e.id)">处理完成</button></td>
+                  <td>{{ e.carId }}</td><td>{{ abnormalTypeText(e.eventType) }}</td><td>{{ e.description || '-' }}</td>
+                  <td>{{ e.penaltyFee.toFixed(2) }}</td><td>{{ e.status === 'RESOLVED' ? '已处理' : '待处理' }}</td>
+                  <td><button @click="resolveAbnormalEvent(e.id)" :disabled="e.status === 'RESOLVED'">{{ e.status === 'RESOLVED' ? '已完成' : '处理完成' }}</button></td>
                 </tr>
               </tbody>
             </table>
@@ -273,17 +289,30 @@
         </section>
 
         <section v-if="page==='reports'" class="page">
+          <div class="summary">
+            <div><span>账单总数</span><strong>{{ report.billCount }}</strong></div>
+            <div><span>已支付</span><strong>{{ report.paidBillCount }}</strong></div>
+            <div><span>累计充电量</span><strong>{{ formatNumber(report.totalChargeAmount) }}</strong></div>
+            <div><span>实收金额</span><strong>{{ formatNumber(report.totalRevenue) }}</strong></div>
+          </div>
+          <div class="summary">
+            <div><span>未支付账单</span><strong>{{ report.unpaidBillCount }}</strong></div>
+            <div><span>累计充电时长</span><strong>{{ formatNumber(report.totalChargeDuration) }}</strong></div>
+            <div><span>待处理异常</span><strong>{{ report.pendingAbnormalCount }}</strong></div>
+            <div><span>已处理异常</span><strong>{{ report.resolvedAbnormalCount }}</strong></div>
+          </div>
           <div class="panel">
             <div class="toolbar">
               <h3>运营报表</h3>
               <button @click="loadBills">刷新报表</button>
             </div>
             <table>
-              <thead><tr><th>账单号</th><th>车号</th><th>充电桩</th><th>电量</th><th>时长</th><th>总费用</th></tr></thead>
+              <thead><tr><th>账单号</th><th>类型</th><th>车号</th><th>说明</th><th>充电桩</th><th>电量/罚款</th><th>时长</th><th>总费用</th><th>支付状态</th></tr></thead>
               <tbody>
                 <tr v-for="b in bills" :key="b.id">
-                  <td>{{ b.billNo }}</td><td>{{ b.carId }}</td><td>{{ b.pileId }}</td>
-                  <td>{{ b.chargeAmount }}</td><td>{{ b.chargeDuration.toFixed(2) }}</td><td>{{ b.totalFee.toFixed(2) }}</td>
+                  <td>{{ b.billNo }}</td><td>{{ b.billType === 'PENALTY' ? '罚款' : '充电' }}</td><td>{{ b.carId }}</td><td>{{ b.description }}</td><td>{{ b.pileId || '-' }}</td>
+                  <td>{{ b.billType === 'PENALTY' ? formatNumber(b.penaltyFee) : formatNumber(b.chargeAmount) }}</td><td>{{ formatNumber(b.chargeDuration) }}</td><td>{{ formatNumber(b.totalFee) }}</td>
+                  <td>{{ b.status === 'PAID' ? '已支付' : '未支付' }}</td>
                 </tr>
               </tbody>
             </table>
