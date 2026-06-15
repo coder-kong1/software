@@ -10,6 +10,7 @@ Vue.createApp({
       message: '',
       snapshot: { piles: [], waitingArea: [], fastQueue: [], slowQueue: [] },
       rule: { peakPrice: 1, normalPrice: 0.7, valleyPrice: 0.4, servicePrice: 0.8 },
+      schedulingStrategy: 'TIME_ORDER',
       pricePreviewAmount: 40,
       selectedPileId: '',
       queueSearchId: '',
@@ -110,7 +111,7 @@ Vue.createApp({
       }
       this.loggedIn = true;
       this.page = 'dashboard';
-      await Promise.all([this.refresh(), this.loadReport()]);
+      await Promise.all([this.refresh(), this.loadReport(), this.loadSchedulingStrategy()]);
       this.startAutoRefresh();
     },
     logout() {
@@ -135,7 +136,7 @@ Vue.createApp({
       this.stopAutoRefresh();
     },
     async refreshCurrent() {
-      if (this.page === 'dashboard') await Promise.all([this.refresh(), this.loadReport()]);
+      if (this.page === 'dashboard') await Promise.all([this.refresh(), this.loadReport(), this.loadSchedulingStrategy()]);
       if (this.page === 'piles' || this.page === 'queues') await this.refresh();
       if (this.page === 'pricing') await this.loadRule();
       if (this.page === 'exceptions') await this.loadAbnormalEvents();
@@ -143,6 +144,21 @@ Vue.createApp({
     },
     async refresh() {
       this.snapshot = await this.call('/snapshot');
+    },
+    async loadSchedulingStrategy() {
+      this.schedulingStrategy = await this.call('/scheduling-strategy');
+    },
+    async saveSchedulingStrategy() {
+      this.schedulingStrategy = await this.call('/scheduling-strategy', {
+        method: 'PUT',
+        body: JSON.stringify({ strategy: this.schedulingStrategy })
+      });
+      await this.refresh();
+    },
+    strategyText(value) {
+      if (value === 'TIME_ORDER') return '时间顺序调度';
+      if (value === 'PRIORITY') return '优先级调度';
+      return value || '-';
     },
     startAutoRefresh() {
       this.stopAutoRefresh();

@@ -51,7 +51,7 @@ public class PileService {
         ChargingPile pile = requirePile(pileId);
         requireStatus(pile, PileStatus.FAULT, "只有故障充电桩可以恢复");
         chargingPileRepository.updateStatus(pile.id(), PileStatus.RUNNING);
-        schedulingService.schedule();
+        schedulingService.recoverFaultPileAndReschedule(pile.id());
     }
 
     private ChargingPile requirePile(String pileId) {

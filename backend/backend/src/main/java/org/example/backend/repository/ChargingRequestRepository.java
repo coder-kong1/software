@@ -88,6 +88,35 @@ public class ChargingRequestRepository {
         );
     }
 
+    public List<ChargingRequest> findPriorityWaitingByMode(ChargingMode mode) {
+        return jdbcTemplate.query(
+            """
+            SELECT id, car_id, request_amount, charged_amount, request_mode, state,
+                   queue_num, pile_id, request_time, start_time, end_time, updated_at
+            FROM charging_request
+            WHERE state = 'WAITING_AREA' AND request_mode = ? AND queue_num LIKE 'P-%'
+            ORDER BY updated_at, request_time, id
+            """,
+            this::mapRow,
+            mode.name()
+        );
+    }
+
+    public List<ChargingRequest> findNormalWaitingByMode(ChargingMode mode) {
+        return jdbcTemplate.query(
+            """
+            SELECT id, car_id, request_amount, charged_amount, request_mode, state,
+                   queue_num, pile_id, request_time, start_time, end_time, updated_at
+            FROM charging_request
+            WHERE state = 'WAITING_AREA' AND request_mode = ?
+              AND (queue_num IS NULL OR queue_num NOT LIKE 'P-%')
+            ORDER BY request_time, id
+            """,
+            this::mapRow,
+            mode.name()
+        );
+    }
+
     public List<ChargingRequest> findByPile(String pileId) {
         return jdbcTemplate.query(
             """
@@ -253,10 +282,11 @@ public class ChargingRequestRepository {
         jdbcTemplate.update(
             """
             UPDATE charging_request
-            SET pile_id = NULL, queue_num = NULL, state = 'WAITING_AREA',
+            SET pile_id = NULL, queue_num = 'P-' || ? || '-' || id, state = 'WAITING_AREA',
                 start_time = NULL, updated_at = CURRENT_TIMESTAMP
             WHERE pile_id = ? AND state IN ('QUEUING', 'CHARGING')
             """,
+            pileId,
             pileId
         );
     }

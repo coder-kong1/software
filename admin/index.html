@@ -52,6 +52,22 @@
             <div><span>等待车辆</span><strong>{{ waitingCount }}</strong></div>
             <div><span>账单数</span><strong>{{ report.billCount }}</strong></div>
           </div>
+          <div class="panel strategy-panel">
+            <div>
+              <p class="eyebrow">Scheduling</p>
+              <h3>调度策略</h3>
+              <p>当前策略：{{ strategyText(schedulingStrategy) }}</p>
+            </div>
+            <div class="form strategy-form">
+              <label>调度方法
+                <select v-model="schedulingStrategy">
+                  <option value="TIME_ORDER">时间顺序调度</option>
+                  <option value="PRIORITY">优先级调度</option>
+                </select>
+              </label>
+              <button @click="saveSchedulingStrategy">保存策略</button>
+            </div>
+          </div>
           <div class="panel">
             <div class="toolbar">
               <h3>待充电车辆</h3>

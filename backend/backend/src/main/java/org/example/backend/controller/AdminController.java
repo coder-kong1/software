@@ -8,6 +8,7 @@ import org.example.backend.domain.PriceRule;
 import org.example.backend.dto.admin.CreateAbnormalEventRequest;
 import org.example.backend.dto.admin.OperationReport;
 import org.example.backend.dto.admin.PileQueueView;
+import org.example.backend.dto.admin.SchedulingStrategyRequest;
 import org.example.backend.dto.admin.StationSnapshot;
 import org.example.backend.dto.billing.PriceRuleRequest;
 import org.example.backend.dto.billing.BillingItem;
@@ -54,6 +55,18 @@ public class AdminController {
     @GetMapping("/queues/{pileId}")
     public ApiResponse<PileQueueView> queueState(@PathVariable String pileId) {
         return ApiResponse.ok(schedulingService.queueState(pileId));
+    }
+
+    @GetMapping("/scheduling-strategy")
+    public ApiResponse<?> getSchedulingStrategy() {
+        return ApiResponse.ok(schedulingService.getStrategy());
+    }
+
+    @PutMapping("/scheduling-strategy")
+    public ApiResponse<?> updateSchedulingStrategy(
+        @Valid @RequestBody SchedulingStrategyRequest request
+    ) {
+        return ApiResponse.ok(schedulingService.updateStrategy(request));
     }
 
     @PostMapping("/piles/{pileId}/power-on")

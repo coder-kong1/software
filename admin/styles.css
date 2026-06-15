@@ -105,6 +105,18 @@ button.secondary { background: #475569; }
 h3 { margin: 0 0 14px; font-size: 20px; }
 h4 { margin: 0 0 8px; color: #3f5065; }
 .queue-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.strategy-panel {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 420px);
+  align-items: end;
+  gap: 18px;
+}
+.strategy-panel p { margin: 4px 0 0; color: var(--muted); }
+.strategy-form {
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: end;
+}
+.strategy-form button { width: fit-content; min-width: 112px; }
 .queue-grid > div, .preview-grid > div, .rule-summary p {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -359,7 +371,7 @@ tbody tr:hover { background: #f8fafc; }
   .sidebar h1 { width: 100%; margin-bottom: 8px; }
   .sidebar button { width: auto; margin: 0; }
   .workspace { margin-left: 0; }
-  .summary, .queue-grid, .pile-grid, .inline-form, .pricing-page, .compact-form, .preview-grid, .rule-summary, .queue-query-form, .queue-metrics { grid-template-columns: 1fr; }
+  .summary, .queue-grid, .pile-grid, .inline-form, .pricing-page, .compact-form, .preview-grid, .rule-summary, .queue-query-form, .queue-metrics, .strategy-panel, .strategy-form { grid-template-columns: 1fr; }
   .compact-form button { grid-column: span 1; }
   .topbar { align-items: flex-start; flex-direction: column; gap: 12px; }
 }

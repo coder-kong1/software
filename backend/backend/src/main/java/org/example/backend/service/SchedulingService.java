@@ -9,12 +9,15 @@ import org.example.backend.domain.ChargingMode;
 import org.example.backend.domain.ChargingPile;
 import org.example.backend.domain.ChargingRequest;
 import org.example.backend.domain.ChargingRequestState;
+import org.example.backend.domain.SchedulingStrategy;
+import org.example.backend.dto.admin.SchedulingStrategyRequest;
 import org.example.backend.dto.admin.PileStateView;
 import org.example.backend.dto.admin.PileQueueView;
 import org.example.backend.dto.admin.QueueCarView;
 import org.example.backend.dto.admin.StationSnapshot;
 import org.example.backend.dto.charging.ChargingRequestResponse;
 import org.example.backend.repository.ChargingPileRepository;
+import org.example.backend.repository.SchedulingConfigRepository;
 import org.example.backend.repository.ChargingRequestRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.http.HttpStatus;
@@ -26,17 +29,20 @@ public class SchedulingService {
 
     private final ChargingPileRepository chargingPileRepository;
     private final ChargingRequestRepository chargingRequestRepository;
+    private final SchedulingConfigRepository schedulingConfigRepository;
     private final AccountService accountService;
     private final ChargingProgressService chargingProgressService;
 
     public SchedulingService(
         ChargingPileRepository chargingPileRepository,
         ChargingRequestRepository chargingRequestRepository,
+        SchedulingConfigRepository schedulingConfigRepository,
         AccountService accountService,
         ChargingProgressService chargingProgressService
     ) {
         this.chargingPileRepository = chargingPileRepository;
         this.chargingRequestRepository = chargingRequestRepository;
+        this.schedulingConfigRepository = schedulingConfigRepository;
         this.accountService = accountService;
         this.chargingProgressService = chargingProgressService;
     }
@@ -47,10 +53,28 @@ public class SchedulingService {
         scheduleMode(ChargingMode.SLOW);
     }
 
+    public SchedulingStrategy getStrategy() {
+        return schedulingConfigRepository.getStrategy();
+    }
+
+    @Transactional
+    public SchedulingStrategy updateStrategy(SchedulingStrategyRequest request) {
+        schedulingConfigRepository.updateStrategy(request.strategy());
+        schedule();
+        return request.strategy();
+    }
+
     @Transactional
     public void releaseAndReschedule(String pileId) {
         chargingRequestRepository.releasePile(pileId);
         schedule();
+    }
+
+    @Transactional
+    public void recoverFaultPileAndReschedule(String pileId) {
+        ChargingPile recoveredPile = chargingPileRepository.findById(pileId)
+            .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "充电桩不存在"));
+        scheduleMode(recoveredPile.mode());
     }
 
     public StationSnapshot snapshot() {
@@ -119,7 +143,11 @@ public class SchedulingService {
             return;
         }
 
-        for (ChargingRequest request : chargingRequestRepository.findWaitingByMode(mode)) {
+        List<ChargingRequest> waitingRequests = schedulingConfigRepository.getStrategy() == SchedulingStrategy.PRIORITY
+            ? priorityWaitingRequests(mode)
+            : chargingRequestRepository.findWaitingByMode(mode);
+
+        for (ChargingRequest request : waitingRequests) {
             ChargingPile target = runningPiles.stream()
                 .filter(pile -> chargingRequestRepository.countActiveByPile(pile.id()) < pile.queueLimit() + 1)
                 .min(Comparator
@@ -139,6 +167,13 @@ public class SchedulingService {
                 ChargingRequestState.QUEUING
             );
         }
+    }
+
+    private List<ChargingRequest> priorityWaitingRequests(ChargingMode mode) {
+        java.util.ArrayList<ChargingRequest> requests = new java.util.ArrayList<>();
+        requests.addAll(chargingRequestRepository.findPriorityWaitingByMode(mode));
+        requests.addAll(chargingRequestRepository.findNormalWaitingByMode(mode));
+        return requests;
     }
 
     private List<ChargingRequestResponse> toResponses(List<ChargingRequest> requests) {
