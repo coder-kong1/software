@@ -6,6 +6,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.ArrayList;
 import java.util.Comparator;
 
@@ -109,12 +110,64 @@ public class BillingService {
     public ChargingDetailResponse getDetail(String carId) {
         String normalizedCarId = normalizeCarId(carId);
         accountService.requireAccount(normalizedCarId);
+        Optional<ChargingRequest> activeRequest = chargingRequestRepository.findActiveByCarId(normalizedCarId);
+        if (activeRequest.isPresent()) {
+            ChargingRequest request = activeRequest.get();
+            ChargingProgressService.ChargingProgress progress = chargingProgressService.progress(request);
+            if (request.state() == ChargingRequestState.CHARGING
+                && progress.chargedAmount() + 0.0001 >= request.requestAmount()) {
+                Bill bill = finishRequest(request, progress);
+                ChargingRequest finishedRequest = chargingRequestRepository.findById(request.id())
+                    .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "未找到充电申请"));
+                return detailFromBill(finishedRequest, bill);
+            }
+            return detailFromActiveRequest(request, progress);
+        }
+
+        Bill latestBill = billRepository.findLatestByCarId(normalizedCarId)
+            .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "未找到充电详单"));
+        ChargingRequest request = chargingRequestRepository.findById(latestBill.requestId())
+            .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "未找到充电申请"));
+        return detailFromBill(request, latestBill);
+    }
+    @Transactional
+    public Bill endCharging(String carId) {
+        String normalizedCarId = normalizeCarId(carId);
+        accountService.requireAccount(normalizedCarId);
         ChargingRequest request = requireActive(normalizedCarId);
-        ChargingProgressService.ChargingProgress progress =
-            chargingProgressService.progress(request);
+        if (request.state() != ChargingRequestState.CHARGING || request.pileId() == null) {
+            throw new BusinessException(HttpStatus.CONFLICT, "车辆当前未在充电");
+        }
+
+        return finishRequest(request, chargingProgressService.progress(request));
+    }
+
+    @Transactional
+    public Optional<Bill> finishIfFullyCharged(String carId) {
+        String normalizedCarId = normalizeCarId(carId);
+        accountService.requireAccount(normalizedCarId);
+        Optional<ChargingRequest> active = chargingRequestRepository.findActiveByCarId(normalizedCarId);
+        if (active.isEmpty()) {
+            return Optional.empty();
+        }
+        ChargingRequest request = active.get();
+        if (request.state() != ChargingRequestState.CHARGING || request.pileId() == null) {
+            return Optional.empty();
+        }
+        ChargingProgressService.ChargingProgress progress = chargingProgressService.progress(request);
+        if (progress.chargedAmount() + 0.0001 < request.requestAmount()) {
+            return Optional.empty();
+        }
+        return Optional.of(finishRequest(request, progress));
+    }
+
+
+    private ChargingDetailResponse detailFromActiveRequest(
+        ChargingRequest request,
+        ChargingProgressService.ChargingProgress progress
+    ) {
         PriceRule rule = priceRuleRepository.get();
         TariffCalculator.FeeBreakdown fee = calculateFee(progress, rule);
-
         return new ChargingDetailResponse(
             request.carId(),
             position(request.state()),
@@ -131,20 +184,33 @@ public class BillingService {
         );
     }
 
-    @Transactional
-    public Bill endCharging(String carId) {
-        String normalizedCarId = normalizeCarId(carId);
-        accountService.requireAccount(normalizedCarId);
-        ChargingRequest request = requireActive(normalizedCarId);
-        if (request.state() != ChargingRequestState.CHARGING || request.pileId() == null) {
-            throw new BusinessException(HttpStatus.CONFLICT, "车辆当前未在充电");
+    private ChargingDetailResponse detailFromBill(ChargingRequest request, Bill bill) {
+        return new ChargingDetailResponse(
+            request.carId(),
+            position(request.state()),
+            request.requestMode(),
+            request.requestAmount(),
+            bill.chargeAmount(),
+            request.queueNum(),
+            bill.pileId(),
+            bill.startTime(),
+            bill.chargeDuration(),
+            bill.chargeFee(),
+            bill.serviceFee(),
+            bill.totalFee()
+        );
+    }
+    private Bill finishRequest(
+        ChargingRequest request,
+        ChargingProgressService.ChargingProgress progress
+    ) {
+        Optional<Bill> existingBill = billRepository.findByRequestId(request.id());
+        if (existingBill.isPresent()) {
+            return existingBill.get();
         }
 
-        ChargingProgressService.ChargingProgress progress =
-            chargingProgressService.progress(request);
         PriceRule rule = priceRuleRepository.get();
         TariffCalculator.FeeBreakdown fee = calculateFee(progress, rule);
-
         chargingRequestRepository.finish(request.id(), progress.chargedAmount());
         String billNo = billNo(request);
         billRepository.insert(
@@ -166,10 +232,9 @@ public class BillingService {
         schedulingService.schedule();
         return requireBill(billNo);
     }
-
     public List<BillingItem> getBills(String carId, String date) {
         String normalizedCarId = normalizeCarId(carId);
-        accountService.requireAccount(normalizedCarId);
+        finishIfFullyCharged(normalizedCarId);
         List<BillingItem> items = new ArrayList<>();
         billRepository.findByCarId(normalizedCarId, date).stream()
             .map(BillingItem::charging)
@@ -305,6 +370,7 @@ public class BillingService {
         }
         penaltyBillRepository.insertPayment(bill.billNo(), carId, bill.amount());
         penaltyBillRepository.markPaid(bill.billNo());
+        abnormalEventRepository.resolve(bill.eventId());
         return penaltyBillRepository.findPaymentByBillNo(bill.billNo())
             .orElseThrow(() -> new IllegalStateException("罚款支付记录创建失败"));
     }

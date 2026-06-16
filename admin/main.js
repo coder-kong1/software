@@ -1,4 +1,4 @@
-const API = 'http://localhost:8080/api/admin';
+const API = '/api/admin';
 
 Vue.createApp({
   data() {
@@ -26,7 +26,7 @@ Vue.createApp({
         pendingAbnormalCount: 0,
         resolvedAbnormalCount: 0
       },
-      abnormal: { carId: 'V21', eventType: 'QUEUE_JUMP', description: '', penaltyFee: 80 },
+      abnormal: { carId: 'V1', eventType: 'QUEUE_JUMP', description: '', penaltyFee: 80 },
       abnormalEvents: []
     };
   },
@@ -65,8 +65,13 @@ Vue.createApp({
     selectedChargingCar() {
       return this.selectedPileCars.find(car => car.state === 'CHARGING') || null;
     },
+    selectedWaitingQueue() {
+      return this.selectedPileCars
+        .filter(car => car.state !== 'CHARGING')
+        .map((car, index) => ({ ...car, waitPosition: `第 ${index + 1} 位` }));
+    },
     selectedWaitingCars() {
-      return this.selectedPileCars.filter(car => car.state !== 'CHARGING').length;
+      return this.selectedWaitingQueue.length;
     },
     selectedQueueUsage() {
       if (!this.selectedPile) return '0 / 0';
@@ -99,8 +104,16 @@ Vue.createApp({
         headers: { 'Content-Type': 'application/json' },
         ...options
       });
-      const body = await res.json();
-      this.message = body.success ? '操作成功' : body.message;
+      const text = await res.text();
+      let body;
+      try {
+        body = JSON.parse(text);
+      } catch (error) {
+        const message = text || `HTTP ${res.status}`;
+        this.message = message;
+        throw new Error(message);
+      }
+      this.message = body.success ? '' : body.message;
       if (!body.success) throw new Error(body.message);
       return body.data;
     },
@@ -143,7 +156,12 @@ Vue.createApp({
       if (this.page === 'reports') await Promise.all([this.loadBills(), this.loadReport()]);
     },
     async refresh() {
-      this.snapshot = await this.call('/snapshot');
+      try {
+        const data = await this.call('/snapshot');
+        this.snapshot = data || { piles: [], waitingArea: [], fastQueue: [], slowQueue: [] };
+      } catch (error) {
+        this.message = '加载充电桩状态失败：' + error.message;
+      }
     },
     async loadSchedulingStrategy() {
       this.schedulingStrategy = await this.call('/scheduling-strategy');
@@ -193,9 +211,30 @@ Vue.createApp({
         this.message = `未找到充电桩 ${target}`;
       }
     },
-    async pileAction(id, action) {
-      await this.call(`/piles/${id}/${action}`, { method: 'POST' });
+    async refreshPileQueue() {
+      if (this.queueSearchId || this.selectedPileId) {
+        await this.queryPileQueue(this.queueSearchId || this.selectedPileId);
+        return;
+      }
       await this.refresh();
+    },
+    async pileAction(id, action) {
+      const actionText = {
+        'power-on': '启动',
+        'power-off': '关闭',
+        fault: '标记故障',
+        recover: '恢复'
+      }[action] || '操作';
+      try {
+        await this.call(`/piles/${id}/${action}`, { method: 'POST' });
+        await this.refresh();
+        if (this.queueSearchId && this.queueSearchId === id) {
+          await this.queryPileQueue(id);
+        }
+        this.message = `${id} 已${actionText}`;
+      } catch (error) {
+        this.message = `${id} ${actionText}失败：${error.message}`;
+      }
     },
     async loadRule() {
       this.rule = await this.call('/price-rule');
@@ -249,19 +288,50 @@ Vue.createApp({
       this.report = await this.call('/reports/summary');
     },
     async reportAbnormalEvent() {
-      const event = await this.call('/abnormal-events', { method: 'POST', body: JSON.stringify(this.abnormal) });
-      this.abnormalEvents.unshift(event);
-      this.abnormal.description = '';
-      await this.loadReport();
+      const carId = (this.abnormal.carId || '').trim().toUpperCase();
+      if (!carId) {
+        this.message = '请先填写异常车辆车号';
+        return;
+      }
+      this.message = '正在登记 ' + carId + ' 的异常事件...';
+      try {
+        const payload = {
+          ...this.abnormal,
+          carId,
+          description: (this.abnormal.description || '').trim()
+        };
+        const event = await this.call('/abnormal-events', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        this.abnormal.description = '';
+        await Promise.all([this.loadAbnormalEvents(), this.loadReport()]);
+        this.message = '已登记 ' + event.carId + ' 的异常事件；该车辆客户端会收到通知，罚款会进入账单支付';
+      } catch (error) {
+        this.message = '登记异常失败：' + (error.message || '请检查后端服务和车号是否存在');
+      }
     },
     async loadAbnormalEvents() {
-      this.abnormalEvents = await this.call('/abnormal-events');
+      const events = await this.call('/abnormal-events');
+      this.abnormalEvents = this.sortAbnormalEvents(events || []);
     },
     async resolveAbnormalEvent(id) {
-      await this.call(`/abnormal-events/${id}/resolve`, { method: 'POST' });
-      await Promise.all([this.loadAbnormalEvents(), this.loadReport()]);
+      this.message = '正在处理异常事件 #' + id + '...';
+      try {
+        const event = await this.call(`/abnormal-events/${id}/resolve`, { method: 'POST' });
+        this.abnormalEvents = this.abnormalEvents.map(item => item.id === id ? event : item);
+        await Promise.all([this.loadAbnormalEvents(), this.loadReport()]);
+        this.message = '异常事件 #' + id + ' 已处理完成';
+      } catch (error) {
+        this.message = '处理异常失败：' + (error.message || '请刷新后重试');
+      }
     },
-    abnormalTypeText(value) {
+    sortAbnormalEvents(events) {
+      return [...events].sort((a, b) => {
+        if (a.status !== b.status) return a.status === 'PENDING' ? -1 : 1;
+        return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+      });
+    },    abnormalTypeText(value) {
       return {
         NO_SHOW: '过号未到',
         OCCUPY_WITHOUT_CHARGE: '霸占充电桩不充电',
@@ -274,3 +344,5 @@ Vue.createApp({
     this.stopAutoRefresh();
   }
 }).mount('#app');
+
+

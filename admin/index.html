@@ -73,22 +73,62 @@
               <h3>待充电车辆</h3>
               <button @click="refresh">刷新状态</button>
             </div>
-            <div class="queue-grid">
-              <div>
-                <h4>快充队列</h4>
-                <p>{{ fastWaitingCars.map(q => q.carId + '@' + q.pileId + '(' + q.requestAmount + 'kWh)').join(' / ') || '-' }}</p>
+            <div class="queue-grid queue-overview-grid">
+              <div class="queue-card fast-card">
+                <div class="queue-card-head">
+                  <div>
+                    <span class="queue-card-kicker">Fast Queue</span>
+                    <h4>快充桩内等待</h4>
+                  </div>
+                  <strong>{{ fastWaitingCars.length }}</strong>
+                </div>
+                <div class="queue-chip-list" v-if="fastWaitingCars.length">
+                  <span class="queue-chip" v-for="car in fastWaitingCars" :key="car.id">
+                    <b>{{ car.carId }}</b>
+                    <small>{{ car.pileId }} · {{ formatNumber(car.requestAmount) }} kWh</small>
+                  </span>
+                </div>
+                <p class="empty-note" v-else>暂无快充等待车辆</p>
               </div>
-              <div>
-                <h4>慢充队列</h4>
-                <p>{{ slowWaitingCars.map(q => q.carId + '@' + q.pileId + '(' + q.requestAmount + 'kWh)').join(' / ') || '-' }}</p>
+
+              <div class="queue-card slow-card">
+                <div class="queue-card-head">
+                  <div>
+                    <span class="queue-card-kicker">Slow Queue</span>
+                    <h4>慢充桩内等待</h4>
+                  </div>
+                  <strong>{{ slowWaitingCars.length }}</strong>
+                </div>
+                <div class="queue-chip-list" v-if="slowWaitingCars.length">
+                  <span class="queue-chip" v-for="car in slowWaitingCars" :key="car.id">
+                    <b>{{ car.carId }}</b>
+                    <small>{{ car.pileId }} · {{ formatNumber(car.requestAmount) }} kWh</small>
+                  </span>
+                </div>
+                <p class="empty-note" v-else>暂无慢充等待车辆</p>
               </div>
-              <div>
-                <h4>未分配等待区</h4>
-                <p>{{ snapshot.waitingArea.map(q => q.carId + '(' + q.requestAmount + 'kWh)').join(' / ') || '-' }}</p>
+
+              <div class="queue-card waiting-card">
+                <div class="queue-card-head">
+                  <div>
+                    <span class="queue-card-kicker">Waiting Area</span>
+                    <h4>未分配等待区</h4>
+                  </div>
+                  <strong>{{ snapshot.waitingArea.length }}</strong>
+                </div>
+                <div class="queue-chip-list" v-if="snapshot.waitingArea.length">
+                  <span class="queue-chip" v-for="car in snapshot.waitingArea" :key="car.id">
+                    <b>{{ car.carId }}</b>
+                    <small>{{ modeText(car.requestMode) }} · {{ formatNumber(car.requestAmount) }} kWh</small>
+                  </span>
+                </div>
+                <p class="empty-note" v-else>等待区为空</p>
               </div>
-              <div>
+
+              <div class="queue-card note-card">
+                <span class="queue-card-kicker">Rule</span>
                 <h4>状态说明</h4>
-                <p>空闲桩队首车辆显示为“待开始”，用户点击开始充电后才进入充电中。</p>
+                <p>运行中的充电桩会自动让队首车辆进入“充电中”，其余车辆保留在桩内等待队列；等待区车辆在桩内有空位后继续参与调度。</p>
               </div>
             </div>
           </div>
@@ -126,7 +166,7 @@
               <p class="eyebrow">Queue Monitor</p>
               <h3>充电桩队列状态</h3>
             </div>
-            <span>按充电桩编号查看当前充电车辆与等待队列</span>
+            <span>先输入充电桩编号，查看当前充电车辆与桩内等待队列</span>
           </div>
 
           <div class="panel queue-query-panel">
@@ -135,7 +175,7 @@
                 <p class="eyebrow">Pile Queue</p>
                 <h3>查询充电桩队列</h3>
               </div>
-              <button class="secondary" @click="refresh">刷新数据</button>
+              <button class="secondary" @click="refreshPileQueue">刷新当前队列</button>
             </div>
             <div class="form queue-query-form">
               <label>充电桩编号
@@ -156,7 +196,7 @@
                 <div>
                   <p class="eyebrow">Selected Pile</p>
                   <h3>{{ selectedPile.pile.id }}</h3>
-                  <p>{{ modeText(selectedPile.pile.mode) }} · {{ selectedPile.pile.powerKw }} kW · 队列容量 {{ selectedPile.pile.queueLimit }}</p>
+                  <p>{{ modeText(selectedPile.pile.mode) }} · {{ selectedPile.pile.powerKw }} kW · 等待位 {{ selectedPile.pile.queueLimit }}</p>
                 </div>
                 <span class="status-badge" :class="statusClass(selectedPile.pile.status)">{{ selectedPile.pile.status }}</span>
               </div>
@@ -170,45 +210,63 @@
             </div>
 
             <div class="queue-metrics">
-              <div class="metric-card accent-green"><span>正在充电</span><strong>{{ selectedChargingCar ? selectedChargingCar.carId : '-' }}</strong></div>
-              <div class="metric-card accent-blue"><span>等待车辆</span><strong>{{ selectedWaitingCars }}</strong></div>
+              <div class="metric-card accent-green"><span>当前充电车辆</span><strong>{{ selectedChargingCar ? selectedChargingCar.carId : '-' }}</strong></div>
+              <div class="metric-card accent-blue"><span>桩内等待车辆</span><strong>{{ selectedWaitingQueue.length }}</strong></div>
               <div class="metric-card accent-slate"><span>当前占用率</span><strong>{{ selectedQueuePercent }}%</strong></div>
             </div>
 
-            <div class="panel queue-table-panel">
-              <div class="toolbar">
-                <h3>车辆明细</h3>
-                <button class="secondary" @click="queryPileQueue(queueSearchId)">重新查询</button>
+            <div class="queue-split-grid">
+              <div class="panel active-charge-card">
+                <div class="toolbar">
+                  <h3>当前充电车辆</h3>
+                  <button class="secondary" @click="refreshPileQueue">刷新</button>
+                </div>
+                <div v-if="selectedChargingCar" class="active-car">
+                  <strong>{{ selectedChargingCar.carId }}</strong>
+                  <span class="status-badge charging">充电中</span>
+                  <dl>
+                    <div><dt>队列编号</dt><dd>{{ selectedChargingCar.queueNum || '-' }}</dd></div>
+                    <div><dt>请求电量</dt><dd>{{ formatNumber(selectedChargingCar.requestAmount) }} kWh</dd></div>
+                    <div><dt>已充电量</dt><dd>{{ formatNumber(selectedChargingCar.chargedAmount) }} kWh</dd></div>
+                    <div><dt>请求时间</dt><dd>{{ selectedChargingCar.requestTime || '-' }}</dd></div>
+                  </dl>
+                </div>
+                <div v-else class="empty-state">当前没有车辆正在这个充电桩充电。</div>
               </div>
-              <table v-if="selectedPileCars.length">
-                <thead>
-                  <tr>
-                    <th>队内位置</th>
-                    <th>车号</th>
-                    <th>车辆容量</th>
-                    <th>车辆状态</th>
-                    <th>队列编号</th>
-                    <th>请求电量</th>
-                    <th>已充电量</th>
-                    <th>预计等待</th>
-                    <th>请求时间</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="car in selectedPileCars" :key="selectedPile.pile.id + '-' + car.id">
-                    <td>{{ car.position }}</td>
-                    <td><strong>{{ car.carId }}</strong></td>
-                    <td>{{ formatNumber(car.carCapacity) }} kWh</td>
-                    <td><span class="status-badge" :class="statusClass(car.state)">{{ car.state === 'QUEUING' && car.estimatedWaitHours === 0 ? '待开始充电' : stateText(car.state) }}</span></td>
-                    <td>{{ car.queueNum || '-' }}</td>
-                    <td>{{ formatNumber(car.requestAmount) }}</td>
-                    <td>{{ formatNumber(car.chargedAmount) }}</td>
-                    <td>{{ formatNumber(car.estimatedWaitHours) }} 小时</td>
-                    <td>{{ car.requestTime || '-' }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <div v-else class="empty-state">当前充电桩没有正在充电或排队车辆。</div>
+
+              <div class="panel queue-table-panel">
+                <div class="toolbar">
+                  <h3>桩内等待队列</h3>
+                  <button class="secondary" @click="refreshPileQueue">刷新</button>
+                </div>
+                <table v-if="selectedWaitingQueue.length">
+                  <thead>
+                    <tr>
+                      <th>等待顺序</th>
+                      <th>车号</th>
+                      <th>车辆状态</th>
+                      <th>队列编号</th>
+                      <th>请求电量</th>
+                      <th>已充电量</th>
+                      <th>预计等待</th>
+                      <th>请求时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="car in selectedWaitingQueue" :key="selectedPile.pile.id + '-' + car.id">
+                      <td>{{ car.waitPosition }}</td>
+                      <td><strong>{{ car.carId }}</strong></td>
+                      <td><span class="status-badge" :class="statusClass(car.state)">桩内等待</span></td>
+                      <td>{{ car.queueNum || '-' }}</td>
+                      <td>{{ formatNumber(car.requestAmount) }} kWh</td>
+                      <td>{{ formatNumber(car.chargedAmount) }} kWh</td>
+                      <td>{{ formatNumber(car.estimatedWaitHours) }} 小时</td>
+                      <td>{{ car.requestTime || '-' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-else class="empty-state">当前充电桩没有等待车辆。</div>
+              </div>
             </div>
           </div>
 
@@ -219,7 +277,6 @@
             请输入充电桩编号后查询，也可以点击上方快捷编号。
           </div>
         </section>
-
         <section v-if="page==='pricing'" class="page pricing-page">
           <div class="panel">
             <h3>计费参数</h3>
@@ -273,7 +330,7 @@
             </div>
             <div class="form inline-form">
               <label>车号
-                <input v-model="abnormal.carId" placeholder="例如 V21" />
+                <input v-model="abnormal.carId" placeholder="例如 V1" />
               </label>
               <label>异常类型
                 <select v-model="abnormal.eventType">
@@ -289,7 +346,7 @@
               <label>异常说明
                 <input v-model.trim="abnormal.description" placeholder="请输入异常情况说明" />
               </label>
-              <button @click="reportAbnormalEvent">登记异常</button>
+              <button @click.prevent="reportAbnormalEvent">登记异常</button>
             </div>
             <table>
               <thead><tr><th>车号</th><th>类型</th><th>说明</th><th>罚款</th><th>状态</th><th>操作</th></tr></thead>
@@ -341,3 +398,5 @@
   <script type="module" src="./main.js"></script>
 </body>
 </html>
+
+

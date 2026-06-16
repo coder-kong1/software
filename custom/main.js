@@ -1,4 +1,4 @@
-const API = 'http://localhost:8080/api';
+const API = '/api';
 
 Vue.createApp({
   data() {
@@ -17,7 +17,9 @@ Vue.createApp({
       detail: null,
       bills: [],
       payments: [],
-      abnormalEvents: []
+      abnormalEvents: [],
+      abnormalLoaded: false,
+      autoSettling: false
     };
   },
   computed: {
@@ -40,8 +42,16 @@ Vue.createApp({
         headers: { 'Content-Type': 'application/json' },
         ...options
       });
-      const body = await res.json();
-      if (!silent) this.message = body.success ? '操作成功' : body.message;
+      const text = await res.text();
+      let body;
+      try {
+        body = JSON.parse(text);
+      } catch (error) {
+        const message = text || `HTTP ${res.status}`;
+        if (!silent) this.message = message;
+        throw new Error(message);
+      }
+      if (!silent) this.message = body.success ? '' : body.message;
       if (!body.success) throw new Error(body.message);
       return body.data;
     },
@@ -50,6 +60,8 @@ Vue.createApp({
       this.request.carId = account.carId;
       this.page = 'app';
       this.tab = 'submit';
+      this.queryAbnormalEvents(true).catch(() => {});
+      this.refreshBillingData().catch(() => {});
       this.startAutoRefresh();
     },
     async loginClient() {
@@ -73,6 +85,7 @@ Vue.createApp({
       this.bills = [];
       this.payments = [];
       this.abnormalEvents = [];
+      this.abnormalLoaded = false;
       this.stopAutoRefresh();
     },
     modeText(value) {
@@ -127,27 +140,45 @@ Vue.createApp({
       this.tab = 'state';
     },
     async endCharging() {
-      const bill = await this.call(`/charging/requests/${this.carId}/end`, { method: 'POST' });
-      this.bills.unshift(bill);
+      await this.call(`/charging/requests/${this.carId}/end`, { method: 'POST' });
+      await this.refreshBillingData();
+      this.state = null;
+      this.detail = null;
       this.tab = 'bill';
     },
+    async refreshBillingData() {
+      const [bills, payments] = await Promise.all([
+        this.call(`/charging/bills/${this.carId}`, {}, true),
+        this.call(`/charging/payments/${this.carId}`, {}, true)
+      ]);
+      this.bills = bills || [];
+      this.payments = payments || [];
+    },
     async queryBills() {
-      this.bills = await this.call(`/charging/bills/${this.carId}`);
+      await this.refreshBillingData();
     },
     async payBill(bill) {
       const payment = await this.call('/charging/bills/pay', {
         method: 'POST',
         body: JSON.stringify({ billNo: bill.billNo, carId: bill.carId, amount: bill.totalFee })
       });
-      this.payments.unshift(payment);
-      await this.queryBills();
+      await this.refreshBillingData();
+      this.message = `账单 ${payment.billNo} 已支付`;
       this.tab = 'payment';
     },
     async queryPayments() {
-      this.payments = await this.call(`/charging/payments/${this.carId}`);
+      await this.refreshBillingData();
     },
-    async queryAbnormalEvents() {
-      this.abnormalEvents = await this.call(`/charging/abnormal-events/${this.carId}`);
+    async queryAbnormalEvents(silent = false) {
+      const events = await this.call(`/charging/abnormal-events/${this.carId}`, {}, silent);
+      const oldIds = new Set((this.abnormalEvents || []).map(event => event.id));
+      const newEvents = (events || []).filter(event => !oldIds.has(event.id));
+      this.abnormalEvents = events || [];
+      if (this.abnormalLoaded && newEvents.length > 0) {
+        this.message = `收到 ${newEvents.length} 条新的异常处理通知`;
+        await this.refreshBillingData();
+      }
+      this.abnormalLoaded = true;
     },
     abnormalTypeText(value) {
       return {
@@ -162,6 +193,7 @@ Vue.createApp({
       this.refreshTimer = window.setInterval(async () => {
         if (this.page !== 'app') return;
         try {
+          await this.queryAbnormalEvents(true);
           if (this.tab === 'state' && this.state) {
             this.state = await this.call(
               `/charging/requests/${this.carId}/state`,
@@ -174,9 +206,11 @@ Vue.createApp({
               {},
               true
             );
+          } else if (this.tab === 'bill' || this.tab === 'payment') {
+            await this.refreshBillingData();
           }
         } catch (error) {
-          // The request may have completed between refreshes.
+          // Background refresh should not interrupt manual operation.
         }
       }, 3000);
     },
@@ -191,3 +225,5 @@ Vue.createApp({
     this.stopAutoRefresh();
   }
 }).mount('#app');
+
+

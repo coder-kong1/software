@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>智能充电桩系统测试桩</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">ACCEPTANCE TEST STUB</p>
+          <h1>智能充电桩系统测试桩</h1>
+          <p class="subtitle">在一个页面中模拟多个客户端和管理员操作，按验收用例展示调度、排队、故障恢复、计费和异常处理。</p>
+        </div>
+        <div class="status-panel">
+          <span :class="['dot', backendOk ? 'ok' : 'bad']"></span>
+          <div>
+            <strong>{{ backendOk ? '后端在线' : '后端离线' }}</strong>
+            <small>{{ lastRefresh || '尚未刷新' }}</small>
+          </div>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="section">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">SCENARIOS</p>
+              <h2>验收输入</h2>
+            </div>
+            <div class="toolbar-actions">
+              <button class="btn primary" @click="initializeStub" :disabled="running">初始化测试桩</button>
+              <button class="btn secondary" @click="refreshAll" :disabled="running">刷新状态</button>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <label>
+              测试车前缀
+              <input v-model.trim="prefix" placeholder="V" />
+            </label>
+            <label>
+              单步间隔(ms)
+              <input v-model.number="delayMs" type="number" min="0" step="100" placeholder="350" />
+            </label>
+            <label>
+              充电桩编号
+              <input v-model.trim="queuePileId" placeholder="F1 / F2 / S1 / S2 / S3" />
+            </label>
+            <label>
+              调度策略
+              <select v-model="strategy">
+                <option value="TIME_ORDER">时间顺序</option>
+                <option value="PRIORITY">优先级</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="scenario-grid">
+            <div class="scenario excel-scenario">
+              <button class="scenario-action" @click="runPrepareCars" :disabled="running">
+                <strong>运行 Excel 验收输入</strong>
+                <span>按验收用例表中的 42 条事件顺序执行。</span>
+              </button>
+              <label class="excel-interval">
+                事件间隔(ms)
+                <input v-model.number="excelDelayMs" type="number" min="0" step="100" placeholder="350" :disabled="running" />
+              </label>
+            </div>
+            <button class="scenario" @click="runTimeOrderScenario" :disabled="running">
+              <strong>时间顺序演示</strong>
+              <span>提交多辆快充和慢充车辆请求。</span>
+            </button>
+            <button class="scenario" @click="runPriorityScenario" :disabled="running">
+              <strong>优先级演示</strong>
+              <span>在优先级调度下模拟充电桩故障与恢复。</span>
+            </button>
+            <button class="scenario" @click="runFaultRecoveryScenario" :disabled="running">
+              <strong>故障恢复演示</strong>
+              <span>故障、释放队列、恢复并重新调度。</span>
+            </button>
+            <button class="scenario" @click="runBillingScenario" :disabled="running">
+              <strong>计费支付演示</strong>
+              <span>开始充电、结束充电、生成账单并支付。</span>
+            </button>
+            <button class="scenario" @click="runAbnormalScenario" :disabled="running">
+              <strong>异常事件演示</strong>
+              <span>创建并处理异常事件。</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">MONITOR</p>
+              <h2>队列状态</h2>
+            </div>
+            <div class="toolbar-actions">
+              <button class="btn secondary" @click="refreshQueueStatus" :disabled="running">刷新队列状态</button>
+            </div>
+          </div>
+
+          <div class="kpis">
+            <div><span>充电桩</span><strong>{{ snapshot.piles.length }}</strong></div>
+            <div><span>等候区</span><strong>{{ snapshot.waitingArea.length }}</strong></div>
+            <div><span>桩内队列</span><strong>{{ pileQueuedCars.length }}</strong></div>
+            <div><span>账单数</span><strong>{{ report.billCount || 0 }}</strong></div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>充电桩</th>
+                  <th>类型</th>
+                  <th>状态</th>
+                  <th>车辆</th>
+                  <th>容量</th>
+                  <th>累计电量</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in snapshot.piles" :key="item.pile.id">
+                  <td><strong>{{ item.pile.id }}</strong></td>
+                  <td>{{ modeText(item.pile.mode) }}</td>
+                  <td><span :class="['badge', statusClass(item.pile.status)]">{{ pileStatusText(item.pile.status) }}</span></td>
+                  <td>
+                    <span v-if="pileCars(item).length === 0" class="muted">暂无车辆</span>
+                    <span v-for="car in pileCars(item)" :key="car.carId" class="car-chip">
+                      {{ car.carId }} - {{ stateText(car.state) }} - 已充 {{ formatNumber(car.chargedAmount) }} kWh
+                    </span>
+                  </td>
+                  <td>{{ pileCars(item).length }} / {{ item.pile.queueLimit + 1 }}</td>
+                  <td>{{ formatNumber(item.pile.totalChargeAmount) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="split">
+            <div class="panel">
+              <h3>等候区</h3>
+              <div class="table-wrap compact">
+                <table>
+                  <thead><tr><th>车号</th><th>模式</th><th>电量</th><th>队列号</th><th>状态</th></tr></thead>
+                  <tbody>
+                    <tr v-if="snapshot.waitingArea.length === 0"><td colspan="5" class="empty">暂无车辆</td></tr>
+                    <tr v-for="car in snapshot.waitingArea" :key="car.id">
+                      <td>{{ car.carId }}</td>
+                      <td>{{ modeText(car.requestMode) }}</td>
+                      <td>{{ formatNumber(car.requestAmount) }}</td>
+                      <td>{{ car.queueNum || '-' }}</td>
+                      <td>{{ stateText(car.state) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel">
+              <h3>指定充电桩队列</h3>
+              <div class="table-wrap compact">
+                <table>
+                  <thead><tr><th>位置</th><th>车号</th><th>模式</th><th>请求电量</th><th>已充电量</th><th>状态</th></tr></thead>
+                  <tbody>
+                    <tr v-if="selectedQueueCars.length === 0"><td colspan="6" class="empty">输入充电桩编号后查询。</td></tr>
+                    <tr v-for="(car, index) in selectedQueueCars" :key="car.id || car.carId">
+                      <td>{{ car.state === 'CHARGING' ? '正在充电' : '等待 ' + (index + 1) }}</td>
+                      <td>{{ car.carId }}</td>
+                      <td>{{ modeText(car.requestMode) }}</td>
+                      <td>{{ formatNumber(car.requestAmount) }}</td>
+                      <td>{{ formatNumber(car.chargedAmount) }}</td>
+                      <td>{{ stateText(car.state) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">MANUAL</p>
+              <h2>手工测试</h2>
+            </div>
+          </div>
+
+          <div class="manual-grid">
+            <div class="panel">
+              <h3>车辆请求</h3>
+              <label>车号<input v-model.trim="manual.carId" placeholder="T1" /></label>
+              <label>用户名<input v-model.trim="manual.userName" placeholder="test_user_1" /></label>
+              <label>车辆容量<input v-model.number="manual.carCapacity" type="number" placeholder="100" /></label>
+              <label>申请电量<input v-model.number="manual.requestAmount" type="number" placeholder="40" /></label>
+              <label>充电模式
+                <select v-model="manual.requestMode">
+                  <option value="FAST">快充</option>
+                  <option value="SLOW">慢充</option>
+                </select>
+              </label>
+              <div class="button-row">
+                <button class="btn" @click="ensureManualCar" :disabled="running">创建/复用车辆</button>
+                <button class="btn primary" @click="submitManualRequest" :disabled="running">提交请求</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h3>车辆充电控制</h3>
+              <label>车号<input v-model.trim="manual.controlCarId" placeholder="T1" /></label>
+              <label>新电量<input v-model.number="manual.newAmount" type="number" placeholder="30" /></label>
+              <label>新模式
+                <select v-model="manual.newMode">
+                  <option value="FAST">快充</option>
+                  <option value="SLOW">慢充</option>
+                </select>
+              </label>
+              <div class="button-row">
+                <button class="btn secondary" @click="queryManualState" :disabled="running">查询车辆状态</button>
+                <button class="btn secondary" @click="modifyManualAmount" :disabled="running">修改电量</button>
+                <button class="btn secondary" @click="modifyManualMode" :disabled="running">修改模式</button>
+                <button class="btn primary" @click="startManualCharging" :disabled="running">车辆开始充电</button>
+                <button class="btn danger" @click="endManualCharging" :disabled="running">车辆结束充电</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h3>充电桩控制</h3>
+              <label>充电桩编号<input v-model.trim="manual.adminPileId" placeholder="F1" /></label>
+              <label>调度策略
+                <select v-model="strategy">
+                  <option value="TIME_ORDER">时间顺序</option>
+                  <option value="PRIORITY">优先级</option>
+                </select>
+              </label>
+              <div class="button-row">
+                <button class="btn secondary" @click="setStrategy" :disabled="running">保存调度策略</button>
+                <button class="btn secondary" @click="pileAction('power-off')" :disabled="running">充电桩关机</button>
+                <button class="btn secondary" @click="pileAction('power-on')" :disabled="running">充电桩开机</button>
+                <button class="btn danger" @click="pileAction('fault')" :disabled="running">充电桩故障</button>
+                <button class="btn primary" @click="pileAction('recover')" :disabled="running">充电桩恢复</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h3>异常处理</h3>
+              <label>异常车辆<input v-model.trim="manual.abnormalCarId" placeholder="T1" /></label>
+              <label>异常类型
+                <select v-model="manual.abnormalType">
+                  <option value="QUEUE_JUMP">恶意插队</option>
+                  <option value="NO_SHOW">过号未到</option>
+                  <option value="OVERSTAY">充完不走</option>
+                  <option value="OCCUPY_WITHOUT_CHARGE">占桩不充电</option>
+                </select>
+              </label>
+              <label>罚金<input v-model.number="manual.penaltyFee" type="number" placeholder="80" /></label>
+              <div class="button-row">
+                <button class="btn" @click="createAbnormal" :disabled="running">创建异常</button>
+              </div>
+            </div>
+          </div>
+          <div class="result-grid">
+            <div class="panel">
+              <h3>最近账单</h3>
+              <div class="table-wrap compact">
+                <table>
+                  <thead><tr><th>账单号</th><th>车号</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody>
+                    <tr v-if="recentBills.length === 0"><td colspan="5" class="empty">暂无账单</td></tr>
+                    <tr v-for="bill in recentBills" :key="bill.billNo">
+                      <td>{{ bill.billNo }}</td>
+                      <td>{{ bill.carId }}</td>
+                      <td>{{ formatNumber(bill.totalFee) }}</td>
+                      <td>{{ bill.status }}</td>
+                      <td><button class="link-btn" @click="payBill(bill)" :disabled="bill.status === 'PAID'">支付</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel scheduling-log-panel">
+              <div class="toolbar-line">
+                <h3>调度日志</h3>
+                <button class="link-btn" @click="refreshAll(true)" :disabled="running">刷新</button>
+              </div>
+              <div class="table-wrap compact">
+                <table>
+                  <thead><tr><th>时间</th><th>车号</th><th>模式</th><th>状态变化</th><th>目标桩</th><th>原因</th></tr></thead>
+                  <tbody>
+                    <tr v-if="schedulingLogs.length === 0"><td colspan="6" class="empty">暂无调度记录</td></tr>
+                    <tr v-for="log in schedulingLogs" :key="log.id">
+                      <td>{{ log.createdAt }}</td>
+                      <td><strong>{{ log.carId }}</strong></td>
+                      <td>{{ logModeText(log.requestMode) }}</td>
+                      <td>{{ logStateText(log.fromState) }} -> {{ logStateText(log.toState) }}</td>
+                      <td>{{ log.toPileId || '-' }}</td>
+                      <td>{{ log.reason }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel">
+              <h3>执行日志</h3>
+              <div class="log-box">
+                <p v-for="item in logs" :key="item.id" :class="item.type">
+                  <span>{{ item.time }}</span><b v-if="item.excelNo">Excel {{ item.excelNo }}</b>{{ item.text }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
+
+
+
+
+
+
+
+
+

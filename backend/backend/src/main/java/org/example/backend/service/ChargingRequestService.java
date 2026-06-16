@@ -19,17 +19,20 @@ public class ChargingRequestService {
     private final AccountService accountService;
     private final SchedulingService schedulingService;
     private final ChargingProgressService chargingProgressService;
+    private final BillingService billingService;
 
     public ChargingRequestService(
         ChargingRequestRepository chargingRequestRepository,
         AccountService accountService,
         SchedulingService schedulingService,
-        ChargingProgressService chargingProgressService
+        ChargingProgressService chargingProgressService,
+        BillingService billingService
     ) {
         this.chargingRequestRepository = chargingRequestRepository;
         this.accountService = accountService;
         this.schedulingService = schedulingService;
         this.chargingProgressService = chargingProgressService;
+        this.billingService = billingService;
     }
 
     @Transactional
@@ -56,11 +59,14 @@ public class ChargingRequestService {
     public ChargingRequestResponse updateAmount(String carId, double amount) {
         String normalizedCarId = AccountService.normalizeCarId(carId);
         UserAccount account = accountService.requireAccount(normalizedCarId);
-        ChargingRequest current = requireEditable(normalizedCarId);
+        ChargingRequest current = requireAmountEditable(normalizedCarId, amount);
         validateAmount(amount, account);
 
         chargingRequestRepository.updateAmount(current.id(), amount);
-        schedulingService.schedule();
+        if (current.state() == ChargingRequestState.WAITING_AREA
+            || current.state() == ChargingRequestState.QUEUING) {
+            schedulingService.schedule();
+        }
         return chargingProgressService.response(requireActive(normalizedCarId));
     }
 
@@ -91,9 +97,43 @@ public class ChargingRequestService {
     public ChargingRequestResponse getState(String carId) {
         String normalizedCarId = AccountService.normalizeCarId(carId);
         accountService.requireAccount(normalizedCarId);
-        return chargingProgressService.response(requireActive(normalizedCarId));
+        ChargingRequest request = requireActive(normalizedCarId);
+        if (request.state() == ChargingRequestState.CHARGING) {
+            double chargedAmount = chargingProgressService.chargedAmount(request);
+            if (chargedAmount + 0.0001 >= request.requestAmount()) {
+                billingService.finishIfFullyCharged(normalizedCarId);
+                return ChargingRequestResponse.from(
+                    chargingRequestRepository.findById(request.id())
+                        .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "未找到充电申请")),
+                    request.requestAmount()
+                );
+            }
+        }
+        return chargingProgressService.response(request);
     }
 
+
+    private ChargingRequest requireAmountEditable(String carId, double newAmount) {
+        ChargingRequest request = requireActive(carId);
+        if (request.state() == ChargingRequestState.WAITING_AREA
+            || request.state() == ChargingRequestState.QUEUING) {
+            return request;
+        }
+        if (request.state() == ChargingRequestState.CHARGING) {
+            double chargedAmount = chargingProgressService.chargedAmount(request);
+            if (chargedAmount + 0.0001 >= request.requestAmount()) {
+                throw new BusinessException(HttpStatus.CONFLICT, "车辆已充满，不能继续修改充电电量");
+            }
+            if (newAmount <= chargedAmount + 0.0001) {
+                throw new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "目标电量必须大于当前已充电量 " + String.format("%.2f", chargedAmount) + " kWh"
+                );
+            }
+            return request;
+        }
+        throw new BusinessException(HttpStatus.CONFLICT, "当前充电状态不允许修改充电电量");
+    }
     private ChargingRequest requireEditable(String carId) {
         ChargingRequest request = requireActive(carId);
         if (request.state() != ChargingRequestState.WAITING_AREA

@@ -101,6 +101,22 @@ public class AbnormalEventRepository {
         );
     }
 
+
+    public int resolvePaidPenaltyEvents() {
+        return jdbcTemplate.update(
+            """
+            UPDATE abnormal_event
+            SET status = 'RESOLVED', resolved_at = CURRENT_TIMESTAMP
+            WHERE status = 'PENDING'
+              AND EXISTS (
+                  SELECT 1
+                  FROM penalty_bill p
+                  WHERE p.event_id = abnormal_event.id
+                    AND p.status = 'PAID'
+              )
+            """
+        );
+    }
     public int countByStatus(String status) {
         Integer count = jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM abnormal_event WHERE status = ?",

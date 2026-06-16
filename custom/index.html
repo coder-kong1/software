@@ -48,11 +48,11 @@
         <button :class="{active: tab==='submit'}" @click="tab='submit'">提交申请</button>
         <button :class="{active: tab==='modify'}" @click="tab='modify'">修改请求</button>
         <button :class="{active: tab==='control'}" @click="tab='control'">充电控制</button>
-        <button :class="{active: tab==='state'}" @click="tab='state'">队列状态</button>
-        <button :class="{active: tab==='detail'}" @click="tab='detail'">充电详单</button>
-        <button :class="{active: tab==='bill'}" @click="tab='bill'">账单支付</button>
-        <button :class="{active: tab==='payment'}" @click="tab='payment'">支付记录</button>
-        <button :class="{active: tab==='abnormal'}" @click="tab='abnormal'; queryAbnormalEvents()">异常与通知</button>
+        <button :class="{active: tab==='state'}" @click="tab='state'; queryState()">队列状态</button>
+        <button :class="{active: tab==='detail'}" @click="tab='detail'; queryDetail()">充电详单</button>
+        <button :class="{active: tab==='bill'}" @click="tab='bill'; refreshBillingData()">账单支付</button>
+        <button :class="{active: tab==='payment'}" @click="tab='payment'; refreshBillingData()">支付记录</button>
+        <button :class="{active: tab==='abnormal'}" @click="tab='abnormal'; queryAbnormalEvents()">异常与通知<span v-if="abnormalEvents.length">（{{ abnormalEvents.length }}）</span></button>
         <button class="logout" @click="logout">退出登录</button>
       </aside>
 
@@ -212,7 +212,7 @@
         <section v-if="tab==='bill'" class="panel">
           <div class="toolbar">
             <h3>账单支付</h3>
-            <button @click="queryBills">查询账单</button>
+            <button @click="refreshBillingData">同步账单与支付记录</button>
           </div>
           <table>
             <thead><tr><th>账单号</th><th>类型</th><th>说明</th><th>充电桩</th><th>电量</th><th>时长</th><th>电费</th><th>服务费</th><th>罚款</th><th>总计</th><th>状态</th><th>操作</th></tr></thead>
@@ -231,7 +231,7 @@
         <section v-if="tab==='payment'" class="panel">
           <div class="toolbar">
             <h3>支付记录</h3>
-            <button @click="queryPayments">刷新</button>
+            <button @click="refreshBillingData">同步账单与支付记录</button>
           </div>
           <table>
             <thead><tr><th>账单号</th><th>车号</th><th>金额</th><th>状态</th><th>支付时间</th></tr></thead>

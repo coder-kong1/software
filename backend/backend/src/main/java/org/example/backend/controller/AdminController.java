@@ -5,6 +5,7 @@ import java.util.List;
 import org.example.backend.common.ApiResponse;
 import org.example.backend.domain.AbnormalEvent;
 import org.example.backend.domain.PriceRule;
+import org.example.backend.domain.SchedulingLog;
 import org.example.backend.dto.admin.CreateAbnormalEventRequest;
 import org.example.backend.dto.admin.OperationReport;
 import org.example.backend.dto.admin.PileQueueView;
@@ -60,6 +61,11 @@ public class AdminController {
     @GetMapping("/scheduling-strategy")
     public ApiResponse<?> getSchedulingStrategy() {
         return ApiResponse.ok(schedulingService.getStrategy());
+    }
+
+    @GetMapping("/scheduling-logs")
+    public ApiResponse<List<SchedulingLog>> getSchedulingLogs() {
+        return ApiResponse.ok(schedulingService.schedulingLogs());
     }
 
     @PutMapping("/scheduling-strategy")
@@ -132,3 +138,5 @@ public class AdminController {
         return ApiResponse.ok(adminOperationService.resolveAbnormalEvent(id));
     }
 }
+
+

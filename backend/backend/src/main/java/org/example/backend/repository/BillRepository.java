@@ -73,6 +73,13 @@ public class BillRepository {
         ).stream().findFirst();
     }
 
+    public Optional<Bill> findByRequestId(long requestId) {
+        return jdbcTemplate.query(
+            BILL_SELECT + " WHERE b.request_id = ?",
+            this::mapRow,
+            requestId
+        ).stream().findFirst();
+    }
     public List<Bill> findByCarId(String carId, String date) {
         if (date == null || date.isBlank()) {
             return jdbcTemplate.query(

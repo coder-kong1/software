@@ -1,4 +1,4 @@
-PRAGMA foreign_keys = ON;
+﻿PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS user_account (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +49,28 @@ WHERE state IN ('WAITING_AREA', 'QUEUING', 'CHARGING');
 CREATE INDEX IF NOT EXISTS idx_charging_request_state_mode_time
 ON charging_request(state, request_mode, request_time);
 
+
+CREATE TABLE IF NOT EXISTS scheduling_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id INTEGER,
+    car_id TEXT NOT NULL,
+    request_mode TEXT CHECK (request_mode IN ('FAST', 'SLOW')),
+    from_state TEXT,
+    to_state TEXT,
+    from_pile_id TEXT,
+    to_pile_id TEXT,
+    queue_num TEXT,
+    strategy TEXT CHECK (strategy IN ('TIME_ORDER', 'PRIORITY')),
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (request_id) REFERENCES charging_request(id),
+    FOREIGN KEY (car_id) REFERENCES user_account(car_id) ON UPDATE CASCADE,
+    FOREIGN KEY (from_pile_id) REFERENCES charging_pile(id),
+    FOREIGN KEY (to_pile_id) REFERENCES charging_pile(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_scheduling_log_created_at
+ON scheduling_log(created_at DESC, id DESC);
 CREATE TABLE IF NOT EXISTS price_rule (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     peak_price REAL NOT NULL CHECK (peak_price >= 0),
@@ -129,3 +151,4 @@ CREATE TABLE IF NOT EXISTS penalty_payment (
     FOREIGN KEY (bill_no) REFERENCES penalty_bill(bill_no),
     FOREIGN KEY (car_id) REFERENCES user_account(car_id) ON UPDATE CASCADE
 );
+
