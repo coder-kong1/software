@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>智能充电桩系统 - 管理员端</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -147,7 +148,7 @@
               <p>{{ item.pile.mode === 'FAST' ? '快充' : '慢充' }} · {{ item.pile.powerKw }} kW</p>
               <p>充电中：{{ item.chargingCar ? item.chargingCar.carId : '-' }}</p>
               <p>已充电量：{{ item.chargingCar ? formatNumber(item.chargingCar.chargedAmount) + ' kWh' : '-' }}</p>
-              <p>队列：{{ item.queue.map(q => q.carId).join(' / ') || '-' }}</p>
+              <p>队列：{{ queueCarText(item) }}</p>
               <div class="pile-actions">
                 <button @click="pileAction(item.pile.id, 'power-on')" :disabled="item.pile.status !== 'STOPPED'">开机</button>
                 <button @click="pileAction(item.pile.id, 'start')" :disabled="item.pile.status !== 'POWER_ON'">运行</button>
@@ -297,9 +298,9 @@
             <table>
               <thead><tr><th>时段</th><th>时间范围</th><th>电价</th><th>说明</th></tr></thead>
               <tbody>
-                <tr><td>峰时</td><td>10:00-15:00 / 18:00-21:00</td><td>{{ rule.peakPrice.toFixed(2) }}</td><td>高峰用电</td></tr>
-                <tr><td>平时</td><td>07:00-10:00 / 15:00-18:00 / 21:00-23:00</td><td>{{ rule.normalPrice.toFixed(2) }}</td><td>常规运营</td></tr>
-                <tr><td>谷时</td><td>23:00-07:00</td><td>{{ rule.valleyPrice.toFixed(2) }}</td><td>低谷优惠</td></tr>
+                <tr><td>峰时</td><td>10:00-15:00 / 18:00-21:00</td><td>{{ formatNumber(rule.peakPrice) }}</td><td>高峰用电</td></tr>
+                <tr><td>平时</td><td>07:00-10:00 / 15:00-18:00 / 21:00-23:00</td><td>{{ formatNumber(rule.normalPrice) }}</td><td>常规运营</td></tr>
+                <tr><td>谷时</td><td>23:00-07:00</td><td>{{ formatNumber(rule.valleyPrice) }}</td><td>低谷优惠</td></tr>
               </tbody>
             </table>
           </div>
@@ -322,8 +323,8 @@
             <div class="rule-summary">
               <p>总费用 = 充电费 + 服务费</p>
               <p>充电费 = 充电电量 × 当前时段电价</p>
-              <p>快充服务费 = 充电电量 × {{ rule.fastServicePrice.toFixed(2) }}</p>
-              <p>慢充服务费 = 充电电量 × {{ rule.slowServicePrice.toFixed(2) }}</p>
+              <p>快充服务费 = 充电电量 × {{ formatNumber(rule.fastServicePrice) }}</p>
+              <p>慢充服务费 = 充电电量 × {{ formatNumber(rule.slowServicePrice) }}</p>
               <p>快充与慢充电费仍按同一时段电价计算，但快充服务费更高。</p>
             </div>
           </div>
@@ -360,7 +361,7 @@
               <tbody>
                 <tr v-for="e in abnormalEvents" :key="e.id">
                   <td>{{ e.carId }}</td><td>{{ abnormalTypeText(e.eventType) }}</td><td>{{ e.description || '-' }}</td>
-                  <td>{{ e.penaltyFee.toFixed(2) }}</td><td>{{ e.status === 'RESOLVED' ? '已处理' : '待处理' }}</td>
+                  <td>{{ formatNumber(e.penaltyFee) }}</td><td>{{ e.status === 'RESOLVED' ? '已处理' : '待处理' }}</td>
                   <td><button @click="resolveAbnormalEvent(e.id)" :disabled="e.status === 'RESOLVED'">{{ e.status === 'RESOLVED' ? '已完成' : '处理完成' }}</button></td>
                 </tr>
               </tbody>

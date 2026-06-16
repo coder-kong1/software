@@ -1,6 +1,23 @@
-import { createApp } from 'vue';
-
 const API = '/api/admin';
+if (!window.Vue) {
+  document.getElementById('app').innerHTML = '<div class="login-page"><div class="login-panel"><h1>管理员端加载失败</h1><p class="hint">Vue 资源未加载，请检查网络或使用 npm run dev 启动。</p></div></div>';
+  throw new Error('Vue is not loaded');
+}
+const { createApp } = window.Vue;
+
+const emptySnapshot = () => ({ piles: [], waitingArea: [], fastQueue: [], slowQueue: [] });
+const normalizeSnapshot = data => ({
+  ...emptySnapshot(),
+  ...(data || {}),
+  piles: Array.isArray(data?.piles) ? data.piles.filter(item => item && item.pile) : [],
+  waitingArea: Array.isArray(data?.waitingArea) ? data.waitingArea : [],
+  fastQueue: Array.isArray(data?.fastQueue) ? data.fastQueue : [],
+  slowQueue: Array.isArray(data?.slowQueue) ? data.slowQueue : []
+});
+const asNumber = value => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+};
 
 createApp({
   data() {
@@ -10,7 +27,7 @@ createApp({
       page: 'dashboard',
       login: { account: 'admin', password: 'admin123' },
       message: '',
-      snapshot: { piles: [], waitingArea: [], fastQueue: [], slowQueue: [] },
+      snapshot: emptySnapshot(),
       rule: {
         peakPrice: 1,
         normalPrice: 0.7,
@@ -39,11 +56,11 @@ createApp({
     };
   },
   computed: {
-    fastCount() { return this.snapshot.piles.filter(p => p.pile.mode === 'FAST').length; },
-    slowCount() { return this.snapshot.piles.filter(p => p.pile.mode === 'SLOW').length; },
+    fastCount() { return this.snapshot.piles.filter(p => p.pile?.mode === 'FAST').length; },
+    slowCount() { return this.snapshot.piles.filter(p => p.pile?.mode === 'SLOW').length; },
     pileQueuedCars() {
       return this.snapshot.piles.flatMap(item =>
-        (item.queue || []).map(car => ({ ...car, pileId: item.pile.id }))
+        (item.queue || []).map(car => ({ ...car, pileId: item.pile?.id || '-' }))
       );
     },
     waitingCount() {
@@ -58,15 +75,15 @@ createApp({
     selectedPile() {
       const target = (this.queueSearchId || '').trim().toUpperCase();
       if (!target) return null;
-      if (this.queueDetail && this.queueDetail.pile.id.toUpperCase() === target) {
+      if (this.queueDetail?.pile?.id?.toUpperCase() === target) {
         return { pile: this.queueDetail.pile };
       }
-      return this.snapshot.piles.find(item => item.pile.id.toUpperCase() === target) || null;
+      return this.snapshot.piles.find(item => item.pile?.id?.toUpperCase() === target) || null;
     },
     selectedPileCars() {
       if (this.queueDetail && this.selectedPile
           && this.queueDetail.pile.id === this.selectedPile.pile.id) {
-        return this.queueDetail.cars;
+        return this.queueDetail.cars || [];
       }
       return this.selectedPile ? this.pileCars(this.selectedPile) : [];
     },
@@ -83,11 +100,11 @@ createApp({
     },
     selectedQueueUsage() {
       if (!this.selectedPile) return '0 / 0';
-      return `${this.selectedPileCars.length} / ${this.selectedPile.pile.queueLimit + 1}`;
+      return `${this.selectedPileCars.length} / ${asNumber(this.selectedPile.pile.queueLimit) + 1}`;
     },
     selectedQueuePercent() {
       if (!this.selectedPile) return 0;
-      const total = this.selectedPile.pile.queueLimit + 1;
+      const total = asNumber(this.selectedPile.pile.queueLimit) + 1;
       return Math.min(100, Math.round((this.selectedPileCars.length / total) * 100));
     },
     pageTitle() {
@@ -138,7 +155,7 @@ createApp({
     logout() {
       this.loggedIn = false;
       this.page = 'dashboard';
-      this.snapshot = { piles: [], waitingArea: [], fastQueue: [], slowQueue: [] };
+      this.snapshot = emptySnapshot();
       this.selectedPileId = '';
       this.queueSearchId = '';
       this.queueDetail = null;
@@ -166,7 +183,7 @@ createApp({
     async refresh() {
       try {
         const data = await this.call('/snapshot');
-        this.snapshot = data || { piles: [], waitingArea: [], fastQueue: [], slowQueue: [] };
+        this.snapshot = normalizeSnapshot(data);
       } catch (error) {
         this.message = '加载充电桩状态失败：' + error.message;
       }
@@ -296,8 +313,11 @@ createApp({
       const queue = (item.queue || []).map((car, index) => ({ ...car, position: `等待第 ${index + 1} 位` }));
       return charging.concat(queue);
     },
+    queueCarText(item) {
+      return (item.queue || []).map(q => q.carId).join(' / ') || '-';
+    },
     powerOffDisabled(item) {
-      return (item.pile.status !== 'POWER_ON' && item.pile.status !== 'RUNNING') || !!item.chargingCar;
+      return (item.pile?.status !== 'POWER_ON' && item.pile?.status !== 'RUNNING') || !!item.chargingCar;
     },
     powerOffHint(item) {
       if (item.chargingCar) {
@@ -368,7 +388,8 @@ createApp({
         if (a.status !== b.status) return a.status === 'PENDING' ? -1 : 1;
         return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
       });
-    },    abnormalTypeText(value) {
+    },
+    abnormalTypeText(value) {
       return {
         NO_SHOW: '过号未到',
         OCCUPY_WITHOUT_CHARGE: '霸占充电桩不充电',
