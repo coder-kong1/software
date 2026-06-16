@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS charging_pile (
     id TEXT PRIMARY KEY,
     mode TEXT NOT NULL CHECK (mode IN ('FAST', 'SLOW')),
     status TEXT NOT NULL DEFAULT 'RUNNING'
-        CHECK (status IN ('RUNNING', 'STOPPED', 'FAULT')),
+        CHECK (status IN ('POWER_ON', 'RUNNING', 'STOPPED', 'FAULT')),
     power_kw REAL NOT NULL CHECK (power_kw > 0),
     queue_limit INTEGER NOT NULL DEFAULT 2 CHECK (queue_limit >= 0),
     total_charge_count INTEGER NOT NULL DEFAULT 0,

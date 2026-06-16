@@ -35,6 +35,7 @@ class AccountAndChargingApiTests {
         jdbcTemplate.update("DELETE FROM payment");
         jdbcTemplate.update("DELETE FROM bill");
         jdbcTemplate.update("DELETE FROM abnormal_event");
+        jdbcTemplate.update("DELETE FROM scheduling_log");
         jdbcTemplate.update("DELETE FROM charging_request");
         jdbcTemplate.update("DELETE FROM user_account");
     }
@@ -64,13 +65,15 @@ class AccountAndChargingApiTests {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.userName").value("测试用户"));
 
+        jdbcTemplate.update("UPDATE charging_pile SET status = 'STOPPED'");
+
         mockMvc.perform(post("/api/charging/requests")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"carId": "V1", "requestAmount": 40, "requestMode": "SLOW"}
-                    """))
+            """))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.data.state").value("QUEUING"))
+            .andExpect(jsonPath("$.data.state").value("WAITING_AREA"))
             .andExpect(jsonPath("$.data.queueNum").isNotEmpty());
 
         mockMvc.perform(put("/api/charging/requests/V1/amount")

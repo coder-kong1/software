@@ -34,6 +34,7 @@ class BillingApiTests {
         jdbcTemplate.update("DELETE FROM payment");
         jdbcTemplate.update("DELETE FROM bill");
         jdbcTemplate.update("DELETE FROM abnormal_event");
+        jdbcTemplate.update("DELETE FROM scheduling_log");
         jdbcTemplate.update("DELETE FROM charging_request");
         jdbcTemplate.update("DELETE FROM user_account");
         jdbcTemplate.update(
@@ -61,10 +62,10 @@ class BillingApiTests {
         mockMvc.perform(post("/api/charging/requests")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"carId": "V10", "requestAmount": 20, "requestMode": "FAST"}
-                    """))
+                    {"carId": "V10", "requestAmount": 40, "requestMode": "FAST"}
+            """))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.data.state").value("QUEUING"))
+            .andExpect(jsonPath("$.data.state").value("CHARGING"))
             .andExpect(jsonPath("$.data.pileId").value("F1"));
 
         mockMvc.perform(post("/api/charging/requests/V10/start")
@@ -76,7 +77,8 @@ class BillingApiTests {
         jdbcTemplate.update(
             """
             UPDATE charging_request
-            SET start_time = datetime('now', '-1 hour')
+            SET start_time = datetime('now', '-1 hour'),
+                updated_at = datetime('now', '-1 hour')
             WHERE car_id = 'V10' AND state = 'CHARGING'
             """
         );
@@ -84,13 +86,13 @@ class BillingApiTests {
         mockMvc.perform(get("/api/charging/details/V10"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.currentPosition").value("充电中"))
-            .andExpect(jsonPath("$.data.chargedAmount").value(20.0))
-            .andExpect(jsonPath("$.data.estimatedServiceFee").value(16.0));
+            .andExpect(jsonPath("$.data.chargedAmount").value(30.0))
+            .andExpect(jsonPath("$.data.estimatedServiceFee").value(30.0));
 
         mockMvc.perform(post("/api/charging/requests/V10/end"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.carId").value("V10"))
-            .andExpect(jsonPath("$.data.chargeAmount").value(20.0))
+            .andExpect(jsonPath("$.data.chargeAmount").value(30.0))
             .andExpect(jsonPath("$.data.status").value("UNPAID"));
 
         String billNo = jdbcTemplate.queryForObject(
@@ -185,7 +187,8 @@ class BillingApiTests {
         jdbcTemplate.update(
             """
             UPDATE charging_request
-            SET start_time = datetime('now', '-1 hour')
+            SET start_time = datetime('now', '-1 hour'),
+                updated_at = datetime('now', '-1 hour')
             WHERE car_id = 'VPROGRESS'
             """
         );

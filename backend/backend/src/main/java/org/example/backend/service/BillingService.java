@@ -371,7 +371,6 @@ public class BillingService {
         }
         penaltyBillRepository.insertPayment(bill.billNo(), carId, bill.amount());
         penaltyBillRepository.markPaid(bill.billNo());
-        abnormalEventRepository.resolve(bill.eventId());
         return penaltyBillRepository.findPaymentByBillNo(bill.billNo())
             .orElseThrow(() -> new IllegalStateException("罚款支付记录创建失败"));
     }

@@ -76,7 +76,6 @@ public class AdminOperationService {
     }
 
     public List<AbnormalEvent> getAbnormalEvents() {
-        abnormalEventRepository.resolvePaidPenaltyEvents();
         return abnormalEventRepository.findAll();
     }
 
@@ -93,7 +92,6 @@ public class AdminOperationService {
     }
 
     public OperationReport getOperationReport() {
-        abnormalEventRepository.resolvePaidPenaltyEvents();
         List<Bill> bills = billRepository.findAll();
         List<PenaltyBill> penaltyBills = penaltyBillRepository.findAll();
         int paidCount = (int) bills.stream()

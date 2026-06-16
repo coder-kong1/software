@@ -33,6 +33,7 @@ class AdminApiTests {
         jdbcTemplate.update("DELETE FROM payment");
         jdbcTemplate.update("DELETE FROM bill");
         jdbcTemplate.update("DELETE FROM abnormal_event");
+        jdbcTemplate.update("DELETE FROM scheduling_log");
         jdbcTemplate.update("DELETE FROM charging_request");
         jdbcTemplate.update("DELETE FROM user_account");
         jdbcTemplate.update(
