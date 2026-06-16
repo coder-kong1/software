@@ -4,7 +4,8 @@ public record PriceRule(
     double peakPrice,
     double normalPrice,
     double valleyPrice,
-    double servicePrice,
+    double fastServicePrice,
+    double slowServicePrice,
     String updatedAt
 ) {
 }

@@ -215,9 +215,12 @@ h4 { margin: 0 0 8px; color: #3f5065; }
 }
 .pile-head { display: flex; justify-content: space-between; align-items: center; }
 .pile-head span { padding: 4px 8px; border-radius: 999px; font-size: 12px; background: #dbeafe; color: #1d4ed8; font-weight: 700; }
+.pile-head span.power-on { background: #fef3c7; color: #92400e; }
 .pile-head span.fault { background: #fee2e2; color: #b91c1c; }
 .pile-head span.stopped { background: #e5e7eb; color: #374151; }
 .pile-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 12px; }
+.pile-actions .action-wrap { display: block; }
+.pile-actions .action-wrap > button { width: 100%; }
 .queue-status-list { display: grid; gap: 16px; }
 .queue-status-page {
   max-width: 1120px;
@@ -456,6 +459,7 @@ button.shortcut:hover {
   color: #374151;
 }
 .status-badge.running, .status-badge.charging { background: #dcfce7; color: #166534; }
+.status-badge.power-on { background: #fef3c7; color: #92400e; }
 .status-badge.queuing, .status-badge.waiting { background: #dbeafe; color: #1d4ed8; }
 .status-badge.fault, .status-badge.canceled { background: #fee2e2; color: #b91c1c; }
 .status-badge.stopped, .status-badge.finished { background: #e5e7eb; color: #374151; }

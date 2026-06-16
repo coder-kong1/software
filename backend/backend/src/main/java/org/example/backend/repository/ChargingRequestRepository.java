@@ -210,6 +210,18 @@ public class ChargingRequestRepository {
         );
     }
 
+    public void updateChargedAmount(long requestId, double chargedAmount) {
+        jdbcTemplate.update(
+            """
+            UPDATE charging_request
+            SET charged_amount = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            chargedAmount,
+            requestId
+        );
+    }
+
     public void updateModeAndQueue(long requestId, ChargingMode mode, String queueNum) {
         jdbcTemplate.update(
             """
@@ -283,7 +295,7 @@ public class ChargingRequestRepository {
             """
             UPDATE charging_request
             SET pile_id = NULL, queue_num = 'P-' || ? || '-' || id, state = 'WAITING_AREA',
-                start_time = NULL, updated_at = CURRENT_TIMESTAMP
+                updated_at = CURRENT_TIMESTAMP
             WHERE pile_id = ? AND state IN ('QUEUING', 'CHARGING')
             """,
             pileId,

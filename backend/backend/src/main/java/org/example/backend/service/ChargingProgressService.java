@@ -37,20 +37,26 @@ public class ChargingProgressService {
 
         ChargingPile pile = chargingPileRepository.findById(request.pileId())
             .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "充电桩不存在"));
-        LocalDateTime startTime = parseTime(request.startTime());
-        double durationHours = Math.max(
+        LocalDateTime segmentStartTime = request.updatedAt() == null
+            ? parseTime(request.startTime())
+            : parseTime(request.updatedAt());
+        double currentSegmentHours = Math.max(
             0,
-            Duration.between(startTime, now).toSeconds() / 3600.0
+            Duration.between(segmentStartTime, now).toSeconds() / 3600.0
         );
-        double calculatedAmount = Math.min(
+        double totalChargedAmount = Math.min(
             request.requestAmount(),
-            durationHours * pile.powerKw()
+            request.chargedAmount() + currentSegmentHours * pile.powerKw()
+        );
+        double totalDurationHours = totalChargedAmount / pile.powerKw();
+        LocalDateTime effectiveStartTime = now.minusSeconds(
+            Math.max(0L, Math.round(totalDurationHours * 3600))
         );
         return new ChargingProgress(
-            startTime,
+            effectiveStartTime,
             now,
-            decimal(Math.max(request.chargedAmount(), calculatedAmount), 4),
-            decimal(durationHours, 4)
+            decimal(totalChargedAmount, 4),
+            decimal(totalDurationHours, 4)
         );
     }
 

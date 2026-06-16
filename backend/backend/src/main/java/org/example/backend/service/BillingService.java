@@ -167,7 +167,7 @@ public class BillingService {
         ChargingProgressService.ChargingProgress progress
     ) {
         PriceRule rule = priceRuleRepository.get();
-        TariffCalculator.FeeBreakdown fee = calculateFee(progress, rule);
+        TariffCalculator.FeeBreakdown fee = calculateFee(request, progress, rule);
         return new ChargingDetailResponse(
             request.carId(),
             position(request.state()),
@@ -210,7 +210,7 @@ public class BillingService {
         }
 
         PriceRule rule = priceRuleRepository.get();
-        TariffCalculator.FeeBreakdown fee = calculateFee(progress, rule);
+        TariffCalculator.FeeBreakdown fee = calculateFee(request, progress, rule);
         chargingRequestRepository.finish(request.id(), progress.chargedAmount());
         String billNo = billNo(request);
         billRepository.insert(
@@ -338,7 +338,8 @@ public class BillingService {
             request.peakPrice(),
             request.normalPrice(),
             request.valleyPrice(),
-            request.servicePrice()
+            request.fastServicePrice(),
+            request.slowServicePrice()
         );
         return priceRuleRepository.get();
     }
@@ -391,6 +392,7 @@ public class BillingService {
     }
 
     private TariffCalculator.FeeBreakdown calculateFee(
+        ChargingRequest request,
         ChargingProgressService.ChargingProgress progress,
         PriceRule rule
     ) {
@@ -406,6 +408,7 @@ public class BillingService {
             localStart,
             localEnd,
             progress.chargedAmount(),
+            request.requestMode(),
             rule
         );
     }

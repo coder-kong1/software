@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>智能充电桩系统 - 管理员端</title>
-  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -143,15 +142,18 @@
             <div class="pile" v-for="item in snapshot.piles" :key="item.pile.id">
               <div class="pile-head">
                 <strong>{{ item.pile.id }}</strong>
-                <span :class="item.pile.status.toLowerCase()">{{ item.pile.status }}</span>
+                <span :class="statusClass(item.pile.status)">{{ pileStatusText(item.pile.status) }}</span>
               </div>
               <p>{{ item.pile.mode === 'FAST' ? '快充' : '慢充' }} · {{ item.pile.powerKw }} kW</p>
               <p>充电中：{{ item.chargingCar ? item.chargingCar.carId : '-' }}</p>
               <p>已充电量：{{ item.chargingCar ? formatNumber(item.chargingCar.chargedAmount) + ' kWh' : '-' }}</p>
               <p>队列：{{ item.queue.map(q => q.carId).join(' / ') || '-' }}</p>
               <div class="pile-actions">
-                <button @click="pileAction(item.pile.id, 'power-on')" :disabled="item.pile.status !== 'STOPPED'">启动</button>
-                <button @click="pileAction(item.pile.id, 'power-off')" :disabled="item.pile.status !== 'RUNNING'">关闭</button>
+                <button @click="pileAction(item.pile.id, 'power-on')" :disabled="item.pile.status !== 'STOPPED'">开机</button>
+                <button @click="pileAction(item.pile.id, 'start')" :disabled="item.pile.status !== 'POWER_ON'">运行</button>
+                <span class="action-wrap" :title="powerOffHint(item)">
+                  <button @click="pileAction(item.pile.id, 'power-off')" :disabled="powerOffDisabled(item)">关机</button>
+                </span>
                 <button class="warn" @click="pileAction(item.pile.id, 'fault')" :disabled="item.pile.status !== 'RUNNING'">故障</button>
                 <button @click="pileAction(item.pile.id, 'recover')" :disabled="item.pile.status !== 'FAULT'">恢复</button>
               </div>
@@ -284,7 +286,8 @@
               <label>峰时电价<input v-model.number="rule.peakPrice" type="number" step="0.1" /></label>
               <label>平时电价<input v-model.number="rule.normalPrice" type="number" step="0.1" /></label>
               <label>谷时电价<input v-model.number="rule.valleyPrice" type="number" step="0.1" /></label>
-              <label>服务费<input v-model.number="rule.servicePrice" type="number" step="0.1" /></label>
+              <label>快充服务费<input v-model.number="rule.fastServicePrice" type="number" step="0.1" /></label>
+              <label>慢充服务费<input v-model.number="rule.slowServicePrice" type="number" step="0.1" /></label>
               <button @click="saveRule">保存参数</button>
             </div>
           </div>
@@ -305,9 +308,12 @@
             <h3>费用预览</h3>
             <div class="preview-grid">
               <label>模拟电量 kWh<input v-model.number="pricePreviewAmount" type="number" step="1" /></label>
-              <div><span>峰时总价</span><strong>{{ previewFee(rule.peakPrice) }}</strong></div>
-              <div><span>平时总价</span><strong>{{ previewFee(rule.normalPrice) }}</strong></div>
-              <div><span>谷时总价</span><strong>{{ previewFee(rule.valleyPrice) }}</strong></div>
+              <div><span>快充峰时总价</span><strong>{{ previewFee(rule.peakPrice, 'FAST') }}</strong></div>
+              <div><span>快充平时总价</span><strong>{{ previewFee(rule.normalPrice, 'FAST') }}</strong></div>
+              <div><span>快充谷时总价</span><strong>{{ previewFee(rule.valleyPrice, 'FAST') }}</strong></div>
+              <div><span>慢充峰时总价</span><strong>{{ previewFee(rule.peakPrice, 'SLOW') }}</strong></div>
+              <div><span>慢充平时总价</span><strong>{{ previewFee(rule.normalPrice, 'SLOW') }}</strong></div>
+              <div><span>慢充谷时总价</span><strong>{{ previewFee(rule.valleyPrice, 'SLOW') }}</strong></div>
             </div>
           </div>
 
@@ -316,8 +322,9 @@
             <div class="rule-summary">
               <p>总费用 = 充电费 + 服务费</p>
               <p>充电费 = 充电电量 × 当前时段电价</p>
-              <p>服务费 = 充电电量 × {{ rule.servicePrice.toFixed(2) }}</p>
-              <p>快充与慢充电费相同，服务费可按运营策略调整。</p>
+              <p>快充服务费 = 充电电量 × {{ rule.fastServicePrice.toFixed(2) }}</p>
+              <p>慢充服务费 = 充电电量 × {{ rule.slowServicePrice.toFixed(2) }}</p>
+              <p>快充与慢充电费仍按同一时段电价计算，但快充服务费更高。</p>
             </div>
           </div>
         </section>

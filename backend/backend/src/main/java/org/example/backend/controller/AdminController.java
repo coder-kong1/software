@@ -81,6 +81,12 @@ public class AdminController {
         return ApiResponse.ok();
     }
 
+    @PostMapping("/piles/{pileId}/start")
+    public ApiResponse<Void> start(@PathVariable String pileId) {
+        pileService.start(pileId);
+        return ApiResponse.ok();
+    }
+
     @PostMapping("/piles/{pileId}/power-off")
     public ApiResponse<Void> powerOff(@PathVariable String pileId) {
         pileService.powerOff(pileId);

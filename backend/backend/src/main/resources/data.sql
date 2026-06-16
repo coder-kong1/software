@@ -11,9 +11,9 @@ SET power_kw = 10.0, updated_at = CURRENT_TIMESTAMP
 WHERE mode = 'SLOW' AND power_kw = 7.0;
 
 INSERT OR IGNORE INTO price_rule
-    (id, peak_price, normal_price, valley_price, service_price)
+    (id, peak_price, normal_price, valley_price, service_price, fast_service_price, slow_service_price)
 VALUES
-    (1, 1.0, 0.7, 0.4, 0.8);
+    (1, 1.0, 0.7, 0.4, 0.8, 1.0, 0.8);
 
 INSERT OR IGNORE INTO app_setting (setting_key, setting_value)
 VALUES ('scheduling_strategy', 'TIME_ORDER');

@@ -16,7 +16,10 @@ public class PriceRuleRepository {
     public PriceRule get() {
         return jdbcTemplate.queryForObject(
             """
-            SELECT peak_price, normal_price, valley_price, service_price, updated_at
+            SELECT peak_price, normal_price, valley_price,
+                   COALESCE(fast_service_price, service_price) AS fast_service_price,
+                   COALESCE(slow_service_price, service_price) AS slow_service_price,
+                   updated_at
             FROM price_rule
             WHERE id = 1
             """,
@@ -24,24 +27,34 @@ public class PriceRuleRepository {
                 resultSet.getDouble("peak_price"),
                 resultSet.getDouble("normal_price"),
                 resultSet.getDouble("valley_price"),
-                resultSet.getDouble("service_price"),
+                resultSet.getDouble("fast_service_price"),
+                resultSet.getDouble("slow_service_price"),
                 resultSet.getString("updated_at")
             )
         );
     }
 
-    public void update(double peakPrice, double normalPrice, double valleyPrice, double servicePrice) {
+    public void update(
+        double peakPrice,
+        double normalPrice,
+        double valleyPrice,
+        double fastServicePrice,
+        double slowServicePrice
+    ) {
         jdbcTemplate.update(
             """
             UPDATE price_rule
-            SET peak_price = ?, normal_price = ?, valley_price = ?, service_price = ?,
+            SET peak_price = ?, normal_price = ?, valley_price = ?,
+                fast_service_price = ?, slow_service_price = ?, service_price = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = 1
             """,
             peakPrice,
             normalPrice,
             valleyPrice,
-            servicePrice
+            fastServicePrice,
+            slowServicePrice,
+            slowServicePrice
         );
     }
 }

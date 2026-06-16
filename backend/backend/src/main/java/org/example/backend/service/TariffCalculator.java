@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 
+import org.example.backend.domain.ChargingMode;
 import org.example.backend.domain.PriceRule;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +18,7 @@ public class TariffCalculator {
         LocalDateTime startTime,
         LocalDateTime endTime,
         double chargeAmount,
+        ChargingMode mode,
         PriceRule rule
     ) {
         if (chargeAmount <= 0) {
@@ -42,7 +44,10 @@ public class TariffCalculator {
             chargeFee = accumulated;
         }
 
-        double serviceFee = chargeAmount * rule.servicePrice();
+        double servicePrice = mode == ChargingMode.FAST
+            ? rule.fastServicePrice()
+            : rule.slowServicePrice();
+        double serviceFee = chargeAmount * servicePrice;
         return new FeeBreakdown(
             money(chargeFee),
             money(serviceFee),

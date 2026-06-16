@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS price_rule (
     normal_price REAL NOT NULL CHECK (normal_price >= 0),
     valley_price REAL NOT NULL CHECK (valley_price >= 0),
     service_price REAL NOT NULL CHECK (service_price >= 0),
+    fast_service_price REAL NOT NULL DEFAULT 1.0 CHECK (fast_service_price >= 0),
+    slow_service_price REAL NOT NULL DEFAULT 0.8 CHECK (slow_service_price >= 0),
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

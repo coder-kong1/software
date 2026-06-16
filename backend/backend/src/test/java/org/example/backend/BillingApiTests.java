@@ -47,7 +47,8 @@ class BillingApiTests {
             """
             UPDATE price_rule
             SET peak_price = 1.0, normal_price = 0.7,
-                valley_price = 0.4, service_price = 0.8
+                valley_price = 0.4, service_price = 0.8,
+                fast_service_price = 1.0, slow_service_price = 0.8
             WHERE id = 1
             """
         );
@@ -145,7 +146,8 @@ class BillingApiTests {
         mockMvc.perform(get("/api/admin/price-rule"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.peakPrice").value(1.0))
-            .andExpect(jsonPath("$.data.servicePrice").value(0.8));
+            .andExpect(jsonPath("$.data.fastServicePrice").value(1.0))
+            .andExpect(jsonPath("$.data.slowServicePrice").value(0.8));
 
         mockMvc.perform(put("/api/admin/price-rule")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -154,12 +156,14 @@ class BillingApiTests {
                       "peakPrice": 1.2,
                       "normalPrice": 0.8,
                       "valleyPrice": 0.5,
-                      "servicePrice": 0.9
+                      "fastServicePrice": 1.1,
+                      "slowServicePrice": 0.9
                     }
                     """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.peakPrice").value(1.2))
-            .andExpect(jsonPath("$.data.servicePrice").value(0.9));
+            .andExpect(jsonPath("$.data.fastServicePrice").value(1.1))
+            .andExpect(jsonPath("$.data.slowServicePrice").value(0.9));
     }
 
     @Test

@@ -78,6 +78,14 @@ public class SchedulingService {
     @Transactional
     public void releaseAndReschedule(String pileId) {
         List<ChargingRequest> releasedRequests = chargingRequestRepository.findByPile(pileId);
+        for (ChargingRequest request : releasedRequests) {
+            if (request.state() == ChargingRequestState.CHARGING) {
+                chargingRequestRepository.updateChargedAmount(
+                    request.id(),
+                    chargingProgressService.chargedAmount(request)
+                );
+            }
+        }
         chargingRequestRepository.releasePile(pileId);
         SchedulingStrategy strategy = schedulingConfigRepository.getStrategy();
         for (ChargingRequest request : releasedRequests) {

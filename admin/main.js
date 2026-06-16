@@ -1,6 +1,8 @@
+import { createApp } from 'vue';
+
 const API = '/api/admin';
 
-Vue.createApp({
+createApp({
   data() {
     return {
       loggedIn: false,
@@ -9,7 +11,13 @@ Vue.createApp({
       login: { account: 'admin', password: 'admin123' },
       message: '',
       snapshot: { piles: [], waitingArea: [], fastQueue: [], slowQueue: [] },
-      rule: { peakPrice: 1, normalPrice: 0.7, valleyPrice: 0.4, servicePrice: 0.8 },
+      rule: {
+        peakPrice: 1,
+        normalPrice: 0.7,
+        valleyPrice: 0.4,
+        fastServicePrice: 1.0,
+        slowServicePrice: 0.8
+      },
       schedulingStrategy: 'TIME_ORDER',
       pricePreviewAmount: 40,
       selectedPileId: '',
@@ -220,8 +228,9 @@ Vue.createApp({
     },
     async pileAction(id, action) {
       const actionText = {
-        'power-on': '启动',
-        'power-off': '关闭',
+        'power-on': '开机',
+        start: '运行',
+        'power-off': '关机',
         fault: '标记故障',
         recover: '恢复'
       }[action] || '操作';
@@ -237,13 +246,23 @@ Vue.createApp({
       }
     },
     async loadRule() {
-      this.rule = await this.call('/price-rule');
+      const rule = await this.call('/price-rule');
+      this.rule = {
+        peakPrice: Number(rule?.peakPrice) || 0,
+        normalPrice: Number(rule?.normalPrice) || 0,
+        valleyPrice: Number(rule?.valleyPrice) || 0,
+        fastServicePrice: Number(rule?.fastServicePrice ?? rule?.servicePrice) || 0,
+        slowServicePrice: Number(rule?.slowServicePrice ?? rule?.servicePrice) || 0
+      };
     },
     async saveRule() {
       await this.call('/price-rule', { method: 'PUT', body: JSON.stringify(this.rule) });
     },
-    previewFee(price) {
-      return ((Number(this.pricePreviewAmount) || 0) * (Number(price) + Number(this.rule.servicePrice))).toFixed(2);
+    previewFee(price, mode) {
+      const servicePrice = mode === 'FAST'
+        ? Number(this.rule.fastServicePrice)
+        : Number(this.rule.slowServicePrice);
+      return ((Number(this.pricePreviewAmount) || 0) * (Number(price) + servicePrice)).toFixed(2);
     },
     formatNumber(value) {
       if (value === undefined || value === null || value === '') return '-';
@@ -264,13 +283,31 @@ Vue.createApp({
         CANCELED: '已取消'
       }[value] || value || '-';
     },
+    pileStatusText(value) {
+      return {
+        POWER_ON: '已开机',
+        RUNNING: '运行中',
+        STOPPED: '已关机',
+        FAULT: '故障'
+      }[value] || value || '-';
+    },
     pileCars(item) {
       const charging = item.chargingCar ? [{ ...item.chargingCar, position: '正在充电' }] : [];
       const queue = (item.queue || []).map((car, index) => ({ ...car, position: `等待第 ${index + 1} 位` }));
       return charging.concat(queue);
     },
+    powerOffDisabled(item) {
+      return (item.pile.status !== 'POWER_ON' && item.pile.status !== 'RUNNING') || !!item.chargingCar;
+    },
+    powerOffHint(item) {
+      if (item.chargingCar) {
+        return '有车正在充电，不能关闭充电桩';
+      }
+      return '';
+    },
     statusClass(value) {
       return {
+        POWER_ON: 'power-on',
         RUNNING: 'running',
         STOPPED: 'stopped',
         FAULT: 'fault',

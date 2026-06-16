@@ -338,11 +338,27 @@ createApp({
       await this.refreshAll(true);
     },
     async recoverAllPiles() {
-      await this.safePileAction('F1', 'recover', 'reset F1');
-      await this.safePileAction('F2', 'recover', 'reset F2');
-      await this.safePileAction('S1', 'recover', 'reset S1');
-      await this.safePileAction('S2', 'recover', 'reset S2');
-      await this.safePileAction('S3', 'recover', 'reset S3');
+      await this.refreshAll(true);
+      for (const pileId of ['F1', 'F2', 'S1', 'S2', 'S3']) {
+        await this.ensurePileRunning(pileId);
+      }
+    },
+    async ensurePileRunning(pileId) {
+      const pile = (this.snapshot.piles || []).find(item => item.pile.id === pileId)?.pile;
+      if (!pile) return;
+      if (pile.status === 'RUNNING') return;
+      if (pile.status === 'FAULT') {
+        await this.safePileAction(pileId, 'recover', `${pileId} 恢复运行`);
+        return;
+      }
+      if (pile.status === 'STOPPED') {
+        await this.safePileAction(pileId, 'power-on', `${pileId} 开机`);
+        await this.safePileAction(pileId, 'start', `${pileId} 开始运行`);
+        return;
+      }
+      if (pile.status === 'POWER_ON') {
+        await this.safePileAction(pileId, 'start', `${pileId} 开始运行`);
+      }
     },
     async runAcceptanceExcelScenario() {
       if (this.running) return;
@@ -567,11 +583,12 @@ createApp({
       this.log(`Abnormal event #${target.id} resolved`, 'success');
     },
     async safePileAction(pileId, action, message) {
+      const actionText = this.pileActionText(action);
       try {
         await this.call(`/admin/piles/${pileId}/${action}`, { method: 'POST' });
-        this.log(message || `${pileId} ${action}`, 'success');
+        this.log(message || `${pileId} ${actionText}`, 'success');
       } catch (error) {
-        this.log(`${pileId} ${action} failed: ${error.message}`, 'warn');
+        this.log(`${pileId} ${actionText}失败：${error.message}`, 'warn');
       }
     },
     async refreshQueueStatus() {
@@ -706,16 +723,28 @@ createApp({
       }[value] || value || '-';
     },
     pileStatusText(value) {
-      return { RUNNING: '运行中', STOPPED: '已关机', FAULT: '故障' }[value] || value || '-';
+      return {
+        POWER_ON: '已开机',
+        RUNNING: '运行中',
+        STOPPED: '已关机',
+        FAULT: '故障'
+      }[value] || value || '-';
     },
     pileActionText(action) {
-      return { fault: '故障', recover: '恢复', 'power-on': '开机', 'power-off': '关机' }[action] || action;
+      return {
+        fault: '故障',
+        recover: '恢复',
+        start: '运行',
+        'power-on': '开机',
+        'power-off': '关机'
+      }[action] || action;
     },
     strategyText(value) {
       return { TIME_ORDER: '时间顺序调度', PRIORITY: '优先级调度' }[value] || value || '-';
     },
     statusClass(value) {
       return {
+        POWER_ON: 'stopped',
         RUNNING: 'running',
         STOPPED: 'stopped',
         FAULT: 'fault',

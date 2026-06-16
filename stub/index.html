@@ -238,8 +238,9 @@
               </label>
               <div class="button-row">
                 <button class="btn secondary" @click="setStrategy" :disabled="running">保存调度策略</button>
-                <button class="btn secondary" @click="pileAction('power-off')" :disabled="running">充电桩关机</button>
                 <button class="btn secondary" @click="pileAction('power-on')" :disabled="running">充电桩开机</button>
+                <button class="btn secondary" @click="pileAction('start')" :disabled="running">运行充电桩</button>
+                <button class="btn secondary" @click="pileAction('power-off')" :disabled="running">充电桩关机</button>
                 <button class="btn danger" @click="pileAction('fault')" :disabled="running">充电桩故障</button>
                 <button class="btn primary" @click="pileAction('recover')" :disabled="running">充电桩恢复</button>
               </div>
